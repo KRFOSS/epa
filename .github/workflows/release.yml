@@ -85,7 +85,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     concurrency:
-      group: epa-release-${{ needs.build.outputs.version }}
+      group: epa-release-publication
       cancel-in-progress: false
     permissions:
       contents: write
@@ -106,11 +106,27 @@ jobs:
           [[ "$EPA_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           (cd dist && sha256sum -c SHA256SUMS)
 
+          # Serialize publication across versions and never make an older
+          # version latest. Read all releases, including nonpublic drafts.
+          releases=$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" | jq -s 'add // []')
+          highest=$(jq -r '.[] | select(.draft == false and .prerelease == false) | .tag_name' <<< "$releases" |
+            { grep -E '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' || [[ $? == 1 ]]; } | LC_ALL=C sort -V | tail -n 1)
+          if [[ -n "$highest" ]]; then
+            [[ "$EPA_VERSION" != "$highest" && "$EPA_VERSION" == "$(printf '%s\n' "$highest" "$EPA_VERSION" | LC_ALL=C sort -V | tail -n 1)" ]] || {
+              echo "Refusing to publish $EPA_VERSION; current highest stable release is $highest" >&2
+              exit 1
+            }
+          fi
+
+          # A previous attempt may have created the tag before uploading.
+          # Reuse it only after verifying that it points to the exact source.
           if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
-            # Create the tag only after the selected commit passes the build.
-            # GitHub rejects an existing tag; no tag is ever overwritten.
-            gh api --method POST "repos/$GH_REPO/git/refs" \
-              -f ref="refs/tags/$EPA_VERSION" -f sha="$EPA_SOURCE_SHA" >/dev/null
+            existing=$(gh api "repos/$GH_REPO/git/matching-refs/tags/$EPA_VERSION" |
+              jq -r --arg ref "refs/tags/$EPA_VERSION" '.[] | select(.ref == $ref) | .ref')
+            if [[ -z "$existing" ]]; then
+              gh api --method POST "repos/$GH_REPO/git/refs" \
+                -f ref="refs/tags/$EPA_VERSION" -f sha="$EPA_SOURCE_SHA" >/dev/null
+            fi
           fi
 
           # Resolve the actual tag target, including annotated tags.
@@ -123,11 +139,19 @@ jobs:
           done
           [[ "$type" == commit && "$sha" == "$EPA_SOURCE_SHA" ]]
 
-          # Do not expose a release until all binaries and the installer
-          # are uploaded. An upload failure leaves a nonpublic draft.
-          gh release create "$EPA_VERSION" --verify-tag --draft --title "EPA $EPA_VERSION" \
-            --notes 'Linux용 사전 빌드 바이너리와 SHA-256 체크섬을 제공합니다. 설치 방법과 백엔드 지원 범위는 README를 참고하세요.' \
-            dist/epa-linux-* dist/install.sh dist/SHA256SUMS
+          # An interrupted upload can be resumed using its existing draft.
+          # Never overwrite any asset in an already published release.
+          existing=$(jq -c --arg tag "$EPA_VERSION" '[.[] | select(.tag_name == $tag)]' <<< "$releases")
+          case $(jq 'length' <<< "$existing") in
+            0)
+              gh release create "$EPA_VERSION" --verify-tag --draft --title "EPA $EPA_VERSION" \
+                --notes 'Linux용 사전 빌드 바이너리와 SHA-256 체크섬을 제공합니다. 설치 방법과 백엔드 지원 범위는 README를 참고하세요.'
+              ;;
+            1) [[ $(jq -r '.[0].draft' <<< "$existing") == true ]] ;;
+            *) echo 'Ambiguous release; refusing to publish' >&2; exit 1 ;;
+          esac
+          [[ $(gh release view "$EPA_VERSION" --json isDraft --jq .isDraft) == true ]]
+          gh release upload "$EPA_VERSION" --clobber dist/epa-linux-* dist/install.sh dist/SHA256SUMS
           [[ $(gh release view "$EPA_VERSION" --json isDraft --jq .isDraft) == true ]]
           diff -u \
             <(printf '%s\n' dist/epa-linux-* dist/install.sh dist/SHA256SUMS | sed 's#^dist/##' | LC_ALL=C sort) \
