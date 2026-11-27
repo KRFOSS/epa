@@ -9,8 +9,9 @@ import (
 )
 
 type Config struct {
-	Style    string `json:"style"`
-	Progress string `json:"progress,omitempty"`
+	Style      string `json:"style"`
+	Progress   string `json:"progress,omitempty"`
+	SelfUpdate bool   `json:"self_update"`
 }
 
 func configPath() (string, error) {
@@ -25,7 +26,7 @@ func configPath() (string, error) {
 }
 
 func LoadConfig() (Config, error) {
-	c := Config{Style: "apt", Progress: "auto"}
+	c := Config{Style: "apt", Progress: "auto", SelfUpdate: true}
 	path, err := configPath()
 	if err != nil {
 		return c, err
@@ -95,6 +96,15 @@ func SaveStyle(style string) error {
 }
 
 func ResetStyle() error { return SaveStyle("apt") }
+
+func SaveSelfUpdate(enabled bool) error {
+	c, err := LoadConfig()
+	if err != nil {
+		return err
+	}
+	c.SelfUpdate = enabled
+	return saveConfig(c)
+}
 
 func SaveProgress(mode string) error {
 	if !ValidProgressMode(mode) {

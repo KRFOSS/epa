@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
 	"syscall"
 
@@ -11,7 +13,7 @@ import (
 
 var version = "0.1.0-dev"
 
-const help = "EPA - Everyone's Package Adapter\n\nUsage: epa [--style apt|dnf|pacman] [--progress auto|tty|plain|json|native|quiet] [--dry-run] COMMAND [ARGS]\n\nDefault APT-style commands:\n  update, upgrade, full-upgrade, install, remove, search, show,\n  list, outdated, autoremove, reinstall, clean\n\nEPA commands (independent of style):\n  style list|current|set NAME|reset\n  backend info\n  config get progress | set progress MODE\n  doctor\n  completion bash|zsh\n  --help, --version\n\nUse --dry-run before COMMAND to print the native command without running it.\nOptions are style-specific. Unsupported options and operations fail closed.\n"
+const help = "EPA - Everyone's Package Adapter\n\nUsage: epa [--style apt|dnf|pacman] [--progress auto|tty|plain|json|native|quiet] [--dry-run] [--no-self-update] COMMAND [ARGS]\n\nDefault APT-style commands:\n  update, upgrade, full-upgrade, install, remove, search, show,\n  list, outdated, autoremove, reinstall, clean\n\nEPA commands (independent of style):\n  style list|current|set NAME|reset\n  backend info\n  config get progress | set progress MODE\n  config get self-update | set self-update on|off\n  self-update\n  doctor\n  completion bash|zsh\n  --help, --version\n\nUse --dry-run before COMMAND to print the native command without running it.\nOptions are style-specific. Unsupported options and operations fail closed.\n"
 
 func main() {
 	code, err := run(os.Args[1:])
@@ -40,6 +42,7 @@ func run(args []string) (int, error) {
 	style := ""
 	progress := ""
 	dry := false
+	noSelfUpdate := false
 	for len(args) > 0 {
 		switch args[0] {
 		case "--style":
@@ -54,6 +57,9 @@ func run(args []string) (int, error) {
 			}
 			progress = args[1]
 			args = args[2:]
+		case "--no-self-update":
+			noSelfUpdate = true
+			args = args[1:]
 		case "--dry-run":
 			dry = true
 			args = args[1:]
@@ -77,9 +83,36 @@ parsed:
 	}
 	viaSudo := os.Geteuid() == 0 && os.Getenv("SUDO_USER") != ""
 	switch args[0] {
+	case "self-update":
+		if len(args) != 1 || dry || noSelfUpdate {
+			return 2, fmt.Errorf("usage: epa self-update (not with --dry-run or --no-self-update)")
+		}
+		return performSelfUpdate(false, false)
 	case "config":
 		if viaSudo {
 			return 2, fmt.Errorf("manage configuration without sudo")
+		}
+		if len(args) == 3 && args[1] == "get" && args[2] == "self-update" {
+			c, err := epa.LoadConfig()
+			if err != nil {
+				return 1, err
+			}
+			if c.SelfUpdate {
+				fmt.Println("on")
+			} else {
+				fmt.Println("off")
+			}
+			return 0, nil
+		}
+		if len(args) == 4 && args[1] == "set" && args[2] == "self-update" && !dry {
+			if args[3] != "on" && args[3] != "off" {
+				return 2, fmt.Errorf("self-update must be on or off")
+			}
+			if err := epa.SaveSelfUpdate(args[3] == "on"); err != nil {
+				return 1, err
+			}
+			fmt.Println("Self-update:", args[3])
+			return 0, nil
 		}
 		if len(args) == 3 && args[1] == "get" && args[2] == "progress" {
 			c, err := epa.LoadConfig()
@@ -96,7 +129,7 @@ parsed:
 			fmt.Println("Progress:", args[3])
 			return 0, nil
 		}
-		return 2, fmt.Errorf("usage: epa config get progress | set progress MODE")
+		return 2, fmt.Errorf("usage: epa config get progress|self-update | set progress MODE | set self-update on|off")
 	case "style":
 		if len(args) < 2 {
 			return 2, fmt.Errorf("usage: epa style list|current|set NAME|reset")
@@ -246,12 +279,47 @@ parsed:
 		printPlan(native, argv)
 		return 0, nil
 	}
-	if mode == epa.ProgressNative {
+	// Decide only after the dry-run and refresh-before path. A failed
+	// preliminary refresh must not start a self-update.
+	autoUpdate := false
+	if epa.ShouldAutoUpdate(op.Action, interactive, noSelfUpdate || viaSudo || mode == epa.ProgressJSON, dry) && epa.SelfUpdateEligible(version) {
+		if c, cfgErr := epa.LoadConfig(); cfgErr == nil {
+			autoUpdate = c.SelfUpdate
+		}
+	}
+	if mode == epa.ProgressNative && !autoUpdate {
 		// Native mode keeps original streams, signals and exit status.
 		err = syscall.Exec(native, append([]string{native}, argv...), os.Environ())
 		return 1, err
 	}
-	return runCommand(native, argv, b.Name, string(op.Action), mode, interactive)
+	code, err := runCommand(native, argv, b.Name, string(op.Action), mode, interactive)
+	if code == 0 && err == nil && autoUpdate {
+		// An optional EPA download must never turn a successful package
+		// manager operation into a failure or overwrite its exit code.
+		_, updateErr := performSelfUpdate(true, mode == epa.ProgressQuiet)
+		if updateErr != nil {
+			fmt.Fprintln(os.Stderr, "epa: self-update skipped:", updateErr)
+		}
+	}
+	return code, err
+}
+
+func performSelfUpdate(automatic, quiet bool) (int, error) {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	defer cancel()
+	if !quiet {
+		fmt.Fprintln(os.Stderr, "EPA: checking for a new release...")
+	}
+	result, err := epa.SelfUpdate(ctx, version)
+	if err != nil {
+		return 1, err
+	}
+	if result.Updated {
+		fmt.Fprintf(os.Stderr, "EPA: %s -> %s; the new version will run next time.\n", version, result.Version)
+	} else if !automatic || !quiet {
+		fmt.Fprintln(os.Stderr, "EPA: no newer stable release.")
+	}
+	return 0, nil
 }
 
 func runCommand(binary string, args []string, backend, action string, mode epa.ProgressMode, interactive bool) (int, error) {
