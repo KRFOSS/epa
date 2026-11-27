@@ -8,7 +8,6 @@ import (
 	"debug/elf"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -38,7 +37,7 @@ var stableVersionPattern = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)
 func parseReleaseVersion(s string) (releaseVersion, error) {
 	var v releaseVersion
 	if !stableVersionPattern.MatchString(s) {
-		return v, fmt.Errorf("not a stable EPA release version: %q", s)
+		return v, LocalizedErrorf("EPA 정식 릴리스 버전 형식이 아닙니다: %q", "not a stable EPA release version: %q", s)
 	}
 	for i, part := range strings.Split(s, ".") {
 		n, err := strconv.ParseUint(part, 10, 32)
@@ -71,7 +70,7 @@ func releaseAsset(arch, goarm string) (string, error) {
 			return "epa-linux-armv" + level, nil
 		}
 	}
-	return "", fmt.Errorf("no release asset for %s (GOARM=%s)", arch, goarm)
+	return "", LocalizedErrorf("%s 아키텍처용 릴리스 파일이 없습니다. (GOARM=%s)", "no release asset for %s (GOARM=%s)", arch, goarm)
 }
 
 func currentReleaseAsset() (string, error) {
@@ -103,10 +102,10 @@ func ownedMode(info os.FileInfo, uid uint32) bool {
 func checkedTarget(home, exe string, running os.FileInfo, uid uint32) (updateTarget, error) {
 	var target updateTarget
 	if uid == 0 {
-		return target, fmt.Errorf("automatic replacement is restricted to unprivileged user installations")
+		return target, LocalizedErrorf("관리자 권한 없이 설치한 사용자 전용 EPA만 자동으로 교체할 수 있습니다.", "automatic replacement is restricted to unprivileged user installations")
 	}
 	if !filepath.IsAbs(home) || !filepath.IsAbs(exe) {
-		return target, fmt.Errorf("invalid executable or home path")
+		return target, LocalizedErrorf("실행 파일 또는 홈 디렉터리 경로가 올바르지 않습니다.", "invalid executable or home path")
 	}
 	resolved, err := filepath.EvalSymlinks(home)
 	if err != nil {
@@ -114,7 +113,7 @@ func checkedTarget(home, exe string, running os.FileInfo, uid uint32) (updateTar
 	}
 	expected := filepath.Join(resolved, ".local", "bin", "epa")
 	if filepath.Clean(exe) != expected {
-		return target, fmt.Errorf("self-update requires the user-owned ~/.local/bin/epa installation")
+		return target, LocalizedErrorf("자체 업데이트는 사용자가 소유한 ~/.local/bin/epa 설치에만 지원됩니다.", "self-update requires the user-owned ~/.local/bin/epa installation")
 	}
 	// No symlink or writable directory on the user-controlled part of the path.
 	for _, dir := range []string{resolved, filepath.Join(resolved, ".local"), filepath.Dir(expected)} {
@@ -123,7 +122,7 @@ func checkedTarget(home, exe string, running os.FileInfo, uid uint32) (updateTar
 			return target, err
 		}
 		if !info.IsDir() || !ownedMode(info, uid) {
-			return target, fmt.Errorf("unsafe update directory: %s", dir)
+			return target, LocalizedErrorf("안전하게 업데이트할 수 없는 디렉터리입니다: %s", "unsafe update directory: %s", dir)
 		}
 	}
 	info, err := os.Lstat(expected)
@@ -131,18 +130,18 @@ func checkedTarget(home, exe string, running os.FileInfo, uid uint32) (updateTar
 		return target, err
 	}
 	if !info.Mode().IsRegular() || !ownedMode(info, uid) || info.Mode()&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky) != 0 || info.Mode().Perm()&0100 == 0 {
-		return target, fmt.Errorf("unsafe update executable: %s", expected)
+		return target, LocalizedErrorf("안전하게 업데이트할 수 없는 실행 파일입니다: %s", "unsafe update executable: %s", expected)
 	}
 	st := info.Sys().(*syscall.Stat_t)
 	if st.Nlink != 1 || running == nil || !os.SameFile(info, running) {
-		return target, fmt.Errorf("the running EPA executable is no longer the installed file")
+		return target, LocalizedErrorf("실행 중인 EPA와 설치된 파일이 더 이상 일치하지 않습니다.", "the running EPA executable is no longer the installed file")
 	}
 	return updateTarget{expected, info, uid}, nil
 }
 
 func currentUpdateTarget() (updateTarget, error) {
 	if os.Geteuid() == 0 || os.Getuid() != os.Geteuid() || os.Getenv("SUDO_USER") != "" {
-		return updateTarget{}, fmt.Errorf("self-update does not replace root or sudo installations; use the installation method instead")
+		return updateTarget{}, LocalizedErrorf("자체 업데이트는 root 또는 sudo 설치를 교체하지 않습니다. 기존 설치 방식으로 갱신하십시오.", "self-update does not replace root or sudo installations; use the installation method instead")
 	}
 	account, err := user.Current()
 	if err != nil {
@@ -166,7 +165,7 @@ func (t updateTarget) unchanged() error {
 	}
 	if !current.Mode().IsRegular() || !ownedMode(current, t.uid) || current.Mode() != t.info.Mode() || current.Sys().(*syscall.Stat_t).Nlink != 1 ||
 		!os.SameFile(current, t.info) || current.Size() != t.info.Size() || !current.ModTime().Equal(t.info.ModTime()) {
-		return fmt.Errorf("installed EPA changed during self-update; refusing replacement")
+		return LocalizedErrorf("자체 업데이트 도중 설치된 EPA가 변경되어 교체를 중단합니다.", "installed EPA changed during self-update; refusing replacement")
 	}
 	return nil
 }
@@ -210,7 +209,7 @@ func githubReleaseSource() releaseSource {
 	transport.TLSHandshakeTimeout = 5 * time.Second
 	client := &http.Client{Transport: transport, Timeout: 2 * time.Minute, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 5 || !allowedReleaseURL(req.URL) {
-			return fmt.Errorf("unsafe GitHub release redirect")
+			return LocalizedErrorf("안전하지 않은 GitHub 릴리스 리디렉션입니다.", "unsafe GitHub release redirect")
 		}
 		return nil
 	}}
@@ -230,7 +229,7 @@ func (s releaseSource) get(ctx context.Context, address, accept string) (*http.R
 	}
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
-		return nil, fmt.Errorf("release server returned HTTP %d", resp.StatusCode)
+		return nil, LocalizedErrorf("릴리스 서버가 HTTP %d를 반환했습니다.", "release server returned HTTP %d", resp.StatusCode)
 	}
 	return resp, nil
 }
@@ -241,7 +240,7 @@ func readBounded(r io.Reader, limit int64) ([]byte, error) {
 		return nil, err
 	}
 	if int64(len(data)) > limit {
-		return nil, fmt.Errorf("release response exceeds size limit")
+		return nil, LocalizedErrorf("릴리스 응답이 허용된 크기를 초과합니다.", "release response exceeds size limit")
 	}
 	return data, nil
 }
@@ -267,7 +266,7 @@ func (s releaseSource) latestTag(ctx context.Context) (string, error) {
 		return "", err
 	}
 	if rel.Draft || rel.Prerelease || !strings.HasPrefix(rel.Tag, "v") {
-		return "", fmt.Errorf("latest release is not a stable version")
+		return "", LocalizedErrorf("최신 릴리스가 정식 버전이 아닙니다.", "latest release is not a stable version")
 	}
 	if _, err = parseReleaseVersion(rel.Tag[1:]); err != nil {
 		return "", err
@@ -283,16 +282,16 @@ func checksumFor(data []byte, asset string) ([]byte, error) {
 			continue
 		}
 		if len(fields) != 2 || result != nil {
-			return nil, fmt.Errorf("ambiguous checksum for %s", asset)
+			return nil, LocalizedErrorf("%s의 체크섬이 중복되어 확인할 수 없습니다.", "ambiguous checksum for %s", asset)
 		}
 		digest, err := hex.DecodeString(fields[0])
 		if err != nil || len(digest) != sha256.Size {
-			return nil, fmt.Errorf("invalid SHA-256 for %s", asset)
+			return nil, LocalizedErrorf("%s의 SHA-256 체크섬 형식이 올바르지 않습니다.", "invalid SHA-256 for %s", asset)
 		}
 		result = digest
 	}
 	if result == nil {
-		return nil, fmt.Errorf("release does not contain a checksum for %s", asset)
+		return nil, LocalizedErrorf("릴리스에 %s의 체크섬이 없습니다.", "release does not contain a checksum for %s", asset)
 	}
 	return result, nil
 }
@@ -315,17 +314,17 @@ func (s releaseSource) checksum(ctx context.Context, tag, asset string) ([]byte,
 func verifyELF(current, candidate string) error {
 	old, err := elf.Open(current)
 	if err != nil {
-		return fmt.Errorf("cannot inspect installed executable: %w", err)
+		return LocalizedErrorf("설치된 실행 파일을 검사할 수 없습니다: %w", "cannot inspect installed executable: %w", err)
 	}
 	defer old.Close()
 	next, err := elf.Open(candidate)
 	if err != nil {
-		return fmt.Errorf("release asset is not an ELF executable: %w", err)
+		return LocalizedErrorf("릴리스 파일이 ELF 실행 파일이 아닙니다: %w", "release asset is not an ELF executable: %w", err)
 	}
 	defer next.Close()
 	if next.Class != old.Class || next.Data != old.Data || next.Machine != old.Machine ||
 		(next.Type != elf.ET_EXEC && next.Type != elf.ET_DYN) {
-		return fmt.Errorf("release asset architecture does not match installed EPA")
+		return LocalizedErrorf("릴리스 파일의 아키텍처가 설치된 EPA와 일치하지 않습니다.", "release asset architecture does not match installed EPA")
 	}
 	return nil
 }
@@ -350,7 +349,7 @@ func updateFrom(ctx context.Context, s releaseSource, t updateTarget, version, a
 	defer dir.Close()
 	// Serialize EPA self-updaters without creating a persistent lock file.
 	if err = syscall.Flock(int(dir.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		return result, fmt.Errorf("cannot lock EPA installation: %w", err)
+		return result, LocalizedErrorf("EPA 설치 파일에 대한 잠금을 획득할 수 없습니다: %w", "cannot lock EPA installation: %w", err)
 	}
 	defer syscall.Flock(int(dir.Fd()), syscall.LOCK_UN)
 	if err = t.unchanged(); err != nil {
@@ -380,7 +379,7 @@ func updateFrom(ctx context.Context, s releaseSource, t updateTarget, version, a
 	}
 	defer resp.Body.Close()
 	if resp.ContentLength > maxReleaseBinary {
-		return result, fmt.Errorf("release binary exceeds size limit")
+		return result, LocalizedErrorf("릴리스 바이너리가 허용된 크기를 초과합니다.", "release binary exceeds size limit")
 	}
 	stage, err := os.CreateTemp(filepath.Dir(t.path), ".epa-update-*")
 	if err != nil {
@@ -394,10 +393,10 @@ func updateFrom(ctx context.Context, s releaseSource, t updateTarget, version, a
 		return result, err
 	}
 	if size == 0 || size > maxReleaseBinary {
-		return result, fmt.Errorf("invalid release binary size")
+		return result, LocalizedErrorf("릴리스 바이너리 크기가 올바르지 않습니다.", "invalid release binary size")
 	}
 	if !strings.EqualFold(hex.EncodeToString(hash.Sum(nil)), hex.EncodeToString(expected)) {
-		return result, fmt.Errorf("release SHA-256 verification failed; existing EPA was not changed")
+		return result, LocalizedErrorf("릴리스 SHA-256 검증에 실패했습니다. 기존 EPA는 변경하지 않았습니다.", "release SHA-256 verification failed; existing EPA was not changed")
 	}
 	if err = verifyELF(t.path, stage.Name()); err != nil {
 		return result, err

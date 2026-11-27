@@ -20,7 +20,7 @@ func TestAPTDownloadScopes(t *testing.T) {
 	var out bytes.Buffer
 	r := NewRenderer(&out, "apt", func() int { return 80 }, false, false)
 	r.Consume([]byte(line + "\r"))
-	if !strings.Contains(out.String(), "40% · total 62%") {
+	if !strings.Contains(out.String(), "40% · 전체 62%") {
 		t.Fatal(out.String())
 	}
 }

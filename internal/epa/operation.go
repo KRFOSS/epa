@@ -1,7 +1,6 @@
 package epa
 
 import (
-	"fmt"
 	"regexp"
 	"strings"
 )
@@ -64,10 +63,10 @@ func ValidPackage(s string) bool {
 func Parse(style string, args []string) (Operation, error) {
 	op := Operation{Style: style}
 	if !ValidStyle(style) {
-		return op, fmt.Errorf("unknown style %q", style)
+		return op, LocalizedErrorf("알 수 없는 명령 스타일입니다: %q", "unknown style %q", style)
 	}
 	if len(args) == 0 {
-		return op, fmt.Errorf("missing command")
+		return op, LocalizedErrorf("명령을 지정해야 합니다.", "missing command")
 	}
 	if style == "pacman" {
 		switch args[0] {
@@ -101,7 +100,7 @@ func Parse(style string, args []string) (Operation, error) {
 		case "-Sc":
 			op.Action = Clean
 		default:
-			return op, fmt.Errorf("unsupported pacman command %q", args[0])
+			return op, LocalizedErrorf("지원하지 않는 pacman 명령입니다: %q", "unsupported pacman command %q", args[0])
 		}
 	} else {
 		commands := aptCommands
@@ -110,7 +109,7 @@ func Parse(style string, args []string) (Operation, error) {
 		}
 		var ok bool
 		if op.Action, ok = commands[args[0]]; !ok {
-			return op, fmt.Errorf("unsupported %s command %q", style, args[0])
+			return op, LocalizedErrorf("%s 스타일에서 지원하지 않는 명령입니다: %q", "unsupported %s command %q", style, args[0])
 		}
 	}
 
@@ -137,7 +136,7 @@ func Parse(style string, args []string) (Operation, error) {
 			case style == "apt" && arg == "--upgradable" && op.Action == List:
 				op.Action = Outdated
 			default:
-				return op, fmt.Errorf("unsupported option %q for %s", arg, style)
+				return op, LocalizedErrorf("%q 옵션은 %s 스타일에서 지원하지 않습니다.", "unsupported option %q for %s", arg, style)
 			}
 			continue
 		}
@@ -149,32 +148,32 @@ func Parse(style string, args []string) (Operation, error) {
 	switch op.Action {
 	case Install, Remove, Reinstall, Info, Search:
 		if len(op.Packages) == 0 {
-			return op, fmt.Errorf("%s requires a target", op.Action)
+			return op, LocalizedErrorf("%s 명령에는 대상을 지정해야 합니다.", "%s requires a target", op.Action)
 		}
 	case FullUpgrade:
 		if len(op.Packages) > 0 && style != "pacman" && style != "dnf" {
-			return op, fmt.Errorf("targeted upgrades are not supported in this style")
+			return op, LocalizedErrorf("이 명령 스타일에서는 특정 패키지만 업그레이드하는 기능을 지원하지 않습니다.", "targeted upgrades are not supported in this style")
 		}
 	default:
 		if len(op.Packages) != 0 {
-			return op, fmt.Errorf("%s does not accept targets in this version", op.Action)
+			return op, LocalizedErrorf("이 버전의 %s 명령에는 대상을 지정할 수 없습니다.", "%s does not accept targets in this version", op.Action)
 		}
 	}
 	if op.Action != Search {
 		for _, p := range op.Packages {
 			if !ValidPackage(p) {
-				return op, fmt.Errorf("unsupported package target %q; use a native package name", p)
+				return op, LocalizedErrorf("지원하지 않는 패키지 대상입니다: %q. 백엔드의 실제 패키지 이름을 사용하십시오.", "unsupported package target %q; use a native package name", p)
 			}
 		}
 	}
 	if op.Yes && !op.Mutates() {
-		return op, fmt.Errorf("confirmation option is not valid for %s", op.Action)
+		return op, LocalizedErrorf("%s 명령에는 자동 확인 옵션을 사용할 수 없습니다.", "confirmation option is not valid for %s", op.Action)
 	}
 	if op.Needed && op.Action != Install && op.Action != FullUpgrade {
-		return op, fmt.Errorf("--needed is not valid for %s", op.Action)
+		return op, LocalizedErrorf("%s 명령에는 --needed를 사용할 수 없습니다.", "--needed is not valid for %s", op.Action)
 	}
 	if op.RefreshFirst && op.Action != Refresh && op.Action != FullUpgrade {
-		return op, fmt.Errorf("--refresh is supported only with makecache or upgrade")
+		return op, LocalizedErrorf("--refresh는 makecache 또는 upgrade에서만 사용할 수 있습니다.", "--refresh is supported only with makecache or upgrade")
 	}
 	return op, nil
 }

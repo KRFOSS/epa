@@ -9,7 +9,7 @@ unset SUDO_USER
 bin=${1:?EPA binary required}
 backend=${2:?expected backend required}
 run() { "$bin" --style apt --progress native "$@"; }
-"$bin" backend info | grep -F "Backend: $backend ("
+"$bin" backend info | grep -F "백엔드: $backend ("
 case "$backend" in
  apt|dnf) run update ;;
  pacman) run full-upgrade -y ;;

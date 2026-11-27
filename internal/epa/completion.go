@@ -26,7 +26,7 @@ func CompletionScript(shell string) (string, bool) {
 }
 
 func commandsFor(style string) []string {
-	list := []string{"style", "backend", "doctor", "completion", "config", "self-update", "--style", "--progress", "--dry-run", "--no-self-update", "--help", "--version"}
+	list := []string{"style", "backend", "doctor", "completion", "config", "self-update", "--style", "--language", "--progress", "--dry-run", "--no-self-update", "--help", "--version"}
 	switch style {
 	case "apt":
 		for cmd := range aptCommands {
@@ -60,6 +60,14 @@ func Complete(style string, words []string, backend Backend) []string {
 			}
 			style = before[1]
 			before = before[2:]
+		case "--language":
+			if len(before) == 1 {
+				return matching(Languages, prefix)
+			}
+			if !ValidLanguage(before[1]) {
+				return nil
+			}
+			before = before[2:]
 		case "--progress":
 			if len(before) == 1 {
 				return matching(ProgressModes, prefix)
@@ -83,10 +91,13 @@ parsed:
 			return matching([]string{"get", "set"}, prefix)
 		}
 		if len(before) == 2 && (before[1] == "get" || before[1] == "set") {
-			return matching([]string{"progress", "self-update"}, prefix)
+			return matching([]string{"progress", "self-update", "language"}, prefix)
 		}
 		if len(before) == 3 && before[1] == "set" && before[2] == "self-update" {
 			return matching([]string{"on", "off"}, prefix)
+		}
+		if len(before) == 3 && before[1] == "set" && before[2] == "language" {
+			return matching(Languages, prefix)
 		}
 		if len(before) == 3 && before[1] == "set" && before[2] == "progress" {
 			return matching(ProgressModes, prefix)
