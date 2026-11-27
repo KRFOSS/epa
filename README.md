@@ -14,11 +14,32 @@ Go나 소스 빌드 없이 최신 정식 릴리스의 Linux 바이너리를 설�
 ( p=$(mktemp) && trap 'rm -f -- "$p"' EXIT && curl -qfsSL --proto '=https' --proto-redir '=https' -o "$p" https://github.com/KRFOSS/epa/releases/latest/download/install.sh && sh "$p" )
 ```
 
-설치기는 아키텍처를 자동으로 감지하고 GitHub 릴리스의 SHA-256 목록과 바이너리를 비교한 뒤 `epa`를 설치합니다. 업데이트할 때도 같은 명령을 사용합니다. 자동으로 `sudo`를 호출하거나 셸 설정을 변경하지 않습니다. 일반 사용자는 `~/.local/bin/epa`, root는 `/usr/local/bin/epa`에 설치합니다. 다른 위치는 환경 변수 `EPA_BIN_DIR`에 절대 경로를 지정하세요. 설치 위치가 `PATH`에 없다면 경로를 추가하거나 `~/.local/bin/epa --version`처럼 절대 경로로 실행하세요.
+설치기는 아키텍처를 자동으로 감지하고 GitHub 릴리스의 SHA-256 목록과 바이너리를 비교한 뒤 `epa`를 설치합니다. 자체 업데이트를 지원하지 않는 기존 버전 또는 시스템 경로의 설치를 갱신할 때는 같은 명령을 사용합니다. 자동으로 `sudo`를 호출하거나 셸 설정을 변경하지 않습니다. 일반 사용자는 `~/.local/bin/epa`, root는 `/usr/local/bin/epa`에 설치합니다. 다른 위치는 환경 변수 `EPA_BIN_DIR`에 절대 경로를 지정하세요. 설치 위치가 `PATH`에 없다면 경로를 추가하거나 `~/.local/bin/epa --version`처럼 절대 경로로 실행하세요.
 
 - **배포 대상:** x86-64, x86 32비트, ARMv5/v6/v7, ARM64, RISC-V 64비트, LoongArch 64비트, MIPS 32/64비트(양쪽 바이트 순서), PowerPC 64비트(양쪽 바이트 순서), IBM Z (`s390x`). Go가 지원하지 않는 CPU·커널 조합은 포함하지 않습니다. PowerPC는 POWER8 이상을 대상으로 합니다.
 - **패키지 관리자:** 바이너리 설치 가능 여부와는 별개로, 패키지 조작은 APT·DNF/DNF5·Pacman이 있는 지원 배포판에서만 가능합니다.
 - **수동 설치:** [GitHub 릴리스](https://github.com/KRFOSS/epa/releases)에서 자신의 아키텍처에 맞는 `epa-linux-*` 파일과 `SHA256SUMS`를 내려받아 검증한 뒤, 원하는 경로에 `epa`로 설치할 수도 있습니다. 체크섬은 다운로드 손상을 탐지하며 별도 릴리스 서명을 대신하지는 않습니다.
+
+### 자체 업데이트
+
+일반 사용자 계정의 기본 경로(`~/.local/bin/epa`)에 설치한 정식 릴리스는 대화형 패키지 갱신·업그레이드가 성공한 뒤 EPA의 새 정식 릴리스도 자동으로 확인합니다. 최신 버전이 현재 버전보다 높을 때만 해당 버전에 고정된 SHA-256 목록과 현재 실행 파일의 아키텍처에 맞는 바이너리를 내려받습니다. 검증과 동기화를 마친 임시 파일을 같은 디렉터리에서 원자적으로 교체하므로 새 버전은 다음 실행부터 적용됩니다.
+
+```sh
+epa update
+epa upgrade -y
+epa --style pacman -Syu
+epa self-update                  # EPA만 명시적으로 갱신
+epa --no-self-update update      # 이번 실행에서만 생략
+epa config set self-update off   # 계정별 자동 갱신 끄기
+epa config set self-update on    # 다시 켜기 (기본값)
+epa config get self-update
+```
+
+- 개발 빌드, 드라이런, 비대화형 패키지 작업, JSON 출력, 실패한 패키지 갱신에서는 자동 업데이트를 수행하지 않습니다. 명시적인 `epa self-update`는 자동 갱신 설정과 별개입니다.
+- root 및 sudo 실행, 시스템 경로와 사용자 지정 경로의 설치는 자체 교체 대상이 아닙니다. 다른 계정이 쓸 수 있는 디렉터리, 심볼릭 링크 및 하드 링크로 된 설치 파일도 교체하지 않습니다. 기존 설치 방법 또는 배포판 패키지 관리자로 갱신하세요. 자체 업데이트는 권한 상승을 요청하지 않습니다.
+- GitHub 조회, 다운로드 또는 SHA-256·실행 파일 형식 검증이 실패하면 기존 파일을 보존하고, 성공한 패키지 작업의 종료 상태도 바꾸지 않습니다. 오래된 버전으로 되돌리지 않습니다.
+- 릴리스 체크섬은 전송 손상과 잘못된 파일을 검출하기 위한 것으로 별도의 암호학적 서명이나 GitHub 계정 침해 방지를 대신하지는 않습니다.
+- 자체 업데이트가 없는 v0.1.0에서 처음 전환할 때는 위 설치 명령을 한 번 더 실행해야 합니다.
 
 ### 소스 빌드 (개발용)
 
