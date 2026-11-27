@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: ['1.23.x', 'stable']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          cache: false
+      - run: test -z "$(gofmt -l cmd internal)"
+      - run: go test ./...
+      - run: go vet ./...
+      - name: Interactive PTY integration
+        run: |
+          go test -c -o /tmp/epa-pty.test ./internal/epa
+          python3 tests/pty_integration.py /tmp/epa-pty.test
+      - run: CGO_ENABLED=0 go build -trimpath -o epa ./cmd/epa
+      - run: |
+          ./epa --version
+          ./epa completion bash | bash -n
+          ./epa --style apt --dry-run install bash -y
+          ./epa --style pacman --dry-run -Syu
+          ./epa __complete -- install bas | grep -Fx bash
+      - name: Zsh completion syntax
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zsh
+          ./epa completion zsh > /tmp/epa-completion.zsh
+          zsh -n /tmp/epa-completion.zsh
+      - name: Linux cross-builds
+        run: |
+          for arch in arm64 riscv64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -o "/tmp/epa-$arch" ./cmd/epa
+          done
