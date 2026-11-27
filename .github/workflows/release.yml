@@ -5,6 +5,16 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '정식 버전 태그 (예: v0.1.1)'
+        required: true
+        type: string
+      source_sha:
+        description: '검증한 main 커밋의 전체 40자리 SHA'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -12,9 +22,23 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.prepare.outputs.version }}
+      source_sha: ${{ steps.prepare.outputs.source_sha }}
     steps:
+      - name: 수동 배포 입력 확인
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+          REQUESTED_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]]
+          [[ "$REQUESTED_VERSION" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]]
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_sha || '' }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-go@v5
@@ -22,13 +46,25 @@ jobs:
           go-version: stable
           cache: false
       - name: 릴리스 버전 및 배포 브랜치 확인
+        id: prepare
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+          REQUESTED_SHA: ${{ inputs.source_sha }}
         run: |
+          set -euo pipefail
           version=v0.0.0
+          source_sha=$(git rev-parse HEAD)
           if [[ "$GITHUB_REF_TYPE" == tag ]]; then
             version=$GITHUB_REF_NAME
             git merge-base --is-ancestor HEAD refs/remotes/origin/main
+          elif [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            version=$REQUESTED_VERSION
+            [[ "$source_sha" == "$REQUESTED_SHA" ]]
+            git merge-base --is-ancestor HEAD refs/remotes/origin/main
           fi
+          [[ "$version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
           printf 'EPA_VERSION=%s\n' "$version" >> "$GITHUB_ENV"
+          printf 'version=%s\nsource_sha=%s\n' "$version" "$source_sha" >> "$GITHUB_OUTPUT"
       - name: Go 검증
         run: |
           go test ./...
@@ -45,9 +81,12 @@ jobs:
           if-no-files-found: error
 
   publish:
-    if: github.event_name == 'push' && github.ref_type == 'tag' && github.repository == 'KRFOSS/epa'
+    if: (github.event_name == 'push' && github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') && github.repository == 'KRFOSS/epa'
     needs: build
     runs-on: ubuntu-latest
+    concurrency:
+      group: epa-release-publication
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
@@ -59,8 +98,62 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          EPA_VERSION: ${{ needs.build.outputs.version }}
+          EPA_SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
         run: |
+          set -euo pipefail
+          [[ "$EPA_VERSION" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          [[ "$EPA_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           (cd dist && sha256sum -c SHA256SUMS)
-          gh release create "$GITHUB_REF_NAME" --verify-tag --title "EPA $GITHUB_REF_NAME" \
-            --notes 'Linux용 사전 빌드 바이너리와 SHA-256 체크섬을 제공합니다. 설치 방법과 백엔드 지원 범위는 README를 참고하세요.' \
-            dist/epa-linux-* dist/install.sh dist/SHA256SUMS
+
+          # Serialize publication across versions and never make an older
+          # version latest. Read all releases, including nonpublic drafts.
+          releases=$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" | jq -s 'add // []')
+          highest=$(jq -r '.[] | select(.draft == false and .prerelease == false) | .tag_name' <<< "$releases" |
+            { grep -E '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' || [[ $? == 1 ]]; } | LC_ALL=C sort -V | tail -n 1)
+          if [[ -n "$highest" ]]; then
+            [[ "$EPA_VERSION" != "$highest" && "$EPA_VERSION" == "$(printf '%s\n' "$highest" "$EPA_VERSION" | LC_ALL=C sort -V | tail -n 1)" ]] || {
+              echo "Refusing to publish $EPA_VERSION; current highest stable release is $highest" >&2
+              exit 1
+            }
+          fi
+
+          # A previous attempt may have created the tag before uploading.
+          # Reuse it only after verifying that it points to the exact source.
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            existing=$(gh api "repos/$GH_REPO/git/matching-refs/tags/$EPA_VERSION" |
+              jq -r --arg ref "refs/tags/$EPA_VERSION" '.[] | select(.ref == $ref) | .ref')
+            if [[ -z "$existing" ]]; then
+              gh api --method POST "repos/$GH_REPO/git/refs" \
+                -f ref="refs/tags/$EPA_VERSION" -f sha="$EPA_SOURCE_SHA" >/dev/null
+            fi
+          fi
+
+          # Resolve the actual tag target, including annotated tags.
+          object=$(gh api "repos/$GH_REPO/git/ref/tags/$EPA_VERSION" --jq '.object | [.type, .sha] | @tsv')
+          read -r type sha <<< "$object"
+          for _ in 1 2 3 4 5; do
+            [[ "$type" == tag ]] || break
+            object=$(gh api "repos/$GH_REPO/git/tags/$sha" --jq '.object | [.type, .sha] | @tsv')
+            read -r type sha <<< "$object"
+          done
+          [[ "$type" == commit && "$sha" == "$EPA_SOURCE_SHA" ]]
+
+          # An interrupted upload can be resumed using its existing draft.
+          # Never overwrite any asset in an already published release.
+          existing=$(jq -c --arg tag "$EPA_VERSION" '[.[] | select(.tag_name == $tag)]' <<< "$releases")
+          case $(jq 'length' <<< "$existing") in
+            0)
+              gh release create "$EPA_VERSION" --verify-tag --draft --title "EPA $EPA_VERSION" \
+                --notes 'Linux용 사전 빌드 바이너리와 SHA-256 체크섬을 제공합니다. 설치 방법과 백엔드 지원 범위는 README를 참고하세요.'
+              ;;
+            1) [[ $(jq -r '.[0].draft' <<< "$existing") == true ]] ;;
+            *) echo 'Ambiguous release; refusing to publish' >&2; exit 1 ;;
+          esac
+          [[ $(gh release view "$EPA_VERSION" --json isDraft --jq .isDraft) == true ]]
+          gh release upload "$EPA_VERSION" --clobber dist/epa-linux-* dist/install.sh dist/SHA256SUMS
+          [[ $(gh release view "$EPA_VERSION" --json isDraft --jq .isDraft) == true ]]
+          diff -u \
+            <(printf '%s\n' dist/epa-linux-* dist/install.sh dist/SHA256SUMS | sed 's#^dist/##' | LC_ALL=C sort) \
+            <(gh release view "$EPA_VERSION" --json assets --jq '.assets[].name' | LC_ALL=C sort)
+          gh release edit "$EPA_VERSION" --draft=false --latest
