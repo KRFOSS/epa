@@ -6,14 +6,29 @@ EPA는 ROKFOSS가 Go로 개발하는 실험적 리눅스 패키지 관리자 어
 
 패키지 이름은 자동 변환하지 않습니다. Debian의 `apache2`, RHEL의 `httpd`, Arch의 `apache`처럼 현재 배포판에서 제공하는 이름을 입력하세요.
 
-## 빌드 및 설치
+## 설치 · 업데이트
 
-Linux와 Go 1.23 이상이 필요합니다. 외부 Go 라이브러리 없이 단일 실행 파일을 빌드합니다.
+Go나 소스 빌드 없이 최신 정식 릴리스의 Linux 바이너리를 설치합니다. 터미널에서 다음 한 줄을 실행하세요.
+
+```sh
+( p=$(mktemp) && trap 'rm -f -- "$p"' EXIT && curl -qfsSL --proto '=https' --proto-redir '=https' -o "$p" https://github.com/KRFOSS/epa/releases/latest/download/install.sh && sh "$p" )
+```
+
+설치기는 아키텍처를 자동으로 감지하고 GitHub 릴리스의 SHA-256 목록과 바이너리를 비교한 뒤 `epa`를 설치합니다. 업데이트할 때도 같은 명령을 사용합니다. 자동으로 `sudo`를 호출하거나 셸 설정을 변경하지 않습니다. 일반 사용자는 `~/.local/bin/epa`, root는 `/usr/local/bin/epa`에 설치합니다. 다른 위치는 환경 변수 `EPA_BIN_DIR`에 절대 경로를 지정하세요. 설치 위치가 `PATH`에 없다면 경로를 추가하거나 `~/.local/bin/epa --version`처럼 절대 경로로 실행하세요.
+
+- **배포 대상:** x86-64, x86 32비트, ARMv5/v6/v7, ARM64, RISC-V 64비트, LoongArch 64비트, MIPS 32/64비트(양쪽 바이트 순서), PowerPC 64비트(양쪽 바이트 순서), IBM Z (`s390x`). Go가 지원하지 않는 CPU·커널 조합은 포함하지 않습니다. PowerPC는 POWER8 이상을 대상으로 합니다.
+- **패키지 관리자:** 바이너리 설치 가능 여부와는 별개로, 패키지 조작은 APT·DNF/DNF5·Pacman이 있는 지원 배포판에서만 가능합니다.
+- **수동 설치:** [GitHub 릴리스](https://github.com/KRFOSS/epa/releases)에서 자신의 아키텍처에 맞는 `epa-linux-*` 파일과 `SHA256SUMS`를 내려받아 검증한 뒤, 원하는 경로에 `epa`로 설치할 수도 있습니다. 체크섬은 다운로드 손상을 탐지하며 별도 릴리스 서명을 대신하지는 않습니다.
+
+### 소스 빌드 (개발용)
+
+Linux와 Go 1.23 이상이 필요합니다.
 
 ```sh
 CGO_ENABLED=0 go build -trimpath -o epa ./cmd/epa
-sudo install -m 0755 epa /usr/local/bin/epa
 ```
+
+배포는 `main`에 포함된 커밋에 `vX.Y.Z` 형식의 태그를 푸시하면 시작됩니다. GitHub Actions는 빌드와 설치 검증을 통과한 경우에만 바이너리, 설치 스크립트, SHA-256 목록을 릴리스에 게시합니다.
 
 ## 사용법
 
