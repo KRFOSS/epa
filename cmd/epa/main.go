@@ -10,7 +10,7 @@ import (
 )
 
 const version = "0.1.0-dev"
-const help = "EPA - Everyone's Package Adapter\n\nUsage: epa [--style apt|dnf|pacman] [--progress auto|tty|plain|json|native] [--dry-run] COMMAND [ARGS]\n\nDefault APT-style commands:\n  update, upgrade, full-upgrade, install, remove, search, show,\n  list, outdated, autoremove, reinstall, clean\n\nEPA commands (independent of style):\n  style list|current|set NAME|reset\n  backend info\n  config get progress | set progress MODE\n  doctor\n  completion bash|zsh\n  --help, --version\n\nUse --dry-run before COMMAND to print the native command without running it.\nOptions are style-specific. Unsupported options and operations fail closed.\n"
+const help = "EPA - Everyone's Package Adapter\n\nUsage: epa [--style apt|dnf|pacman] [--progress auto|tty|plain|json|native|quiet] [--dry-run] COMMAND [ARGS]\n\nDefault APT-style commands:\n  update, upgrade, full-upgrade, install, remove, search, show,\n  list, outdated, autoremove, reinstall, clean\n\nEPA commands (independent of style):\n  style list|current|set NAME|reset\n  backend info\n  config get progress | set progress MODE\n  doctor\n  completion bash|zsh\n  --help, --version\n\nUse --dry-run before COMMAND to print the native command without running it.\nOptions are style-specific. Unsupported options and operations fail closed.\n"
 
 func main() {
 	code, err := run(os.Args[1:])
@@ -49,7 +49,7 @@ func run(args []string) (int, error) {
 			args = args[2:]
 		case "--progress":
 			if len(args) < 2 || !epa.ValidProgressMode(args[1]) {
-				return 2, fmt.Errorf("--progress requires auto, tty, plain, json or native")
+				return 2, fmt.Errorf("--progress requires auto, tty, plain, json, native or quiet")
 			}
 			progress = args[1]
 			args = args[2:]
@@ -221,6 +221,9 @@ parsed:
 			mode = epa.ProgressNative
 		}
 	}
+	if mode == epa.ProgressQuiet && !op.Mutates() {
+		mode = epa.ProgressNative
+	}
 	if mode == epa.ProgressTTY && !interactive {
 		mode = epa.ProgressPlain
 	}
@@ -251,13 +254,15 @@ parsed:
 }
 
 func runCommand(binary string, args []string, backend, action string, mode epa.ProgressMode, interactive bool) (int, error) {
-	if interactive && (mode == epa.ProgressTTY || mode == epa.ProgressPlain) {
-		code, started, err := epa.RunInteractive(binary, args, backend, mode == epa.ProgressPlain)
+	if interactive && (mode == epa.ProgressTTY || mode == epa.ProgressPlain || mode == epa.ProgressQuiet) {
+		code, started, err := epa.RunInteractive(binary, args, backend, mode == epa.ProgressPlain, mode == epa.ProgressQuiet)
 		if started {
 			return code, err
 		}
-		fmt.Fprintln(os.Stderr, "epa: terminal renderer unavailable; using plain output:", err)
-		mode = epa.ProgressPlain
+		fmt.Fprintln(os.Stderr, "epa: terminal renderer unavailable; using unfiltered backend output:", err)
+		if mode != epa.ProgressQuiet {
+			mode = epa.ProgressPlain
+		}
 	}
 	return epa.RunPlain(binary, args, mode, action)
 }

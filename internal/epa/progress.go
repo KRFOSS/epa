@@ -22,9 +22,10 @@ const (
 	ProgressPlain  ProgressMode = "plain"
 	ProgressJSON   ProgressMode = "json"
 	ProgressNative ProgressMode = "native"
+	ProgressQuiet  ProgressMode = "quiet"
 )
 
-var ProgressModes = []string{"auto", "tty", "plain", "json", "native"}
+var ProgressModes = []string{"auto", "tty", "plain", "json", "native", "quiet"}
 
 func ValidProgressMode(s string) bool {
 	for _, m := range ProgressModes {
@@ -39,6 +40,7 @@ type ProgressEvent struct {
 	Phase   string `json:"phase"`
 	Item    string `json:"item,omitempty"`
 	Percent *int   `json:"percent,omitempty"`
+	Overall *int   `json:"overall_percent,omitempty"`
 	Done    bool   `json:"done,omitempty"`
 }
 
@@ -52,6 +54,10 @@ func rule(pattern, phase string, item, percent int) eventRule {
 	return eventRule{regexp.MustCompile(pattern), phase, item, percent}
 }
 
+// APT's acquisition pulse reports the overall percentage before the bracket
+// and the item's percentage inside it. Keep the two scopes separate.
+var aptDownload = regexp.MustCompile(`^([0-9]{1,3})%\s*\[[0-9]+\s+([A-Za-z0-9.+_:-]+)\s+[0-9.,]+\s*[kMGT]?B(?:/[0-9.,]+\s*[kMGT]?B)?\s+([0-9]{1,3})%\]$`)
+
 var aptRules = []eventRule{
 	rule(`^Reading package lists\.\.\.\s*([0-9]{1,3})%$`, "Reading metadata", 0, 1),
 	rule(`^Reading package lists\.\.\.\s*(Done)?$`, "Reading metadata", 0, 0),
@@ -60,7 +66,6 @@ var aptRules = []eventRule{
 	rule(`^Reading state information\.\.\.\s*(Done)?$`, "Reading installed state", 0, 0),
 	rule(`^Progress:\s*\[\s*([0-9]{1,3})%\s*\]\s*\[[#. =-]*\]$`, "Applying transaction", 0, 1),
 	rule(`^([0-9]{1,3})%\s*\[Working\]$`, "Downloading metadata or packages", 0, 1),
-	rule(`^([0-9]{1,3})%\s*\[[0-9]+\s+([A-Za-z0-9.+_:-]+)\s+[0-9.,]+\s*[kMGT]?B(?:/[0-9.,]+\s*[kMGT]?B)?\s+[0-9]{1,3}%\]$`, "Downloading metadata or packages", 2, 1),
 }
 var pacmanRules = []eventRule{
 	rule(`^:: Synchronizing package databases\.\.\.$`, "Reading metadata", 0, 0),
@@ -95,6 +100,16 @@ func ParseProgress(backend, line string) (ProgressEvent, bool) {
 		return ProgressEvent{}, false
 	}
 	line = strings.TrimSpace(line)
+	if backend == "apt" {
+		if m := aptDownload.FindStringSubmatch(line); m != nil {
+			total, _ := strconv.Atoi(m[1])
+			item, _ := strconv.Atoi(m[3])
+			if total <= 100 && item <= 100 {
+				return ProgressEvent{Phase: "Downloading metadata or packages", Item: m[2], Percent: &item, Overall: &total}, true
+			}
+			return ProgressEvent{}, false
+		}
+	}
 	for _, r := range rules {
 		m := r.pattern.FindStringSubmatch(line)
 		if m == nil {
@@ -130,7 +145,7 @@ type Renderer struct {
 	backend                                  string
 	width                                    func() int
 	color                                    bool
-	plain                                    bool
+	plain, quiet                             bool
 	event                                    ProgressEvent
 	active, drawn, passthrough, continuation bool
 	endedLine                                bool
@@ -156,7 +171,7 @@ func (r *Renderer) Clear() {
 }
 
 func (r *Renderer) Paint() {
-	if !r.active || r.passthrough || !r.endedLine {
+	if r.quiet || !r.active || r.passthrough || !r.endedLine {
 		return
 	}
 	if r.plain || r.width() < 8 {
@@ -200,6 +215,12 @@ func (r *Renderer) text(fit bool) string {
 			suffix = fmt.Sprintf(" [%s%s] %3d%%", strings.Repeat("=", bar), strings.Repeat(" ", cells-bar), n)
 		} else {
 			suffix = fmt.Sprintf(" %d%%", n)
+		}
+	}
+	if r.event.Overall != nil {
+		total := fmt.Sprintf(" · total %d%%", *r.event.Overall)
+		if !fit || utf8.RuneCountInString(suffix+total)+2 < r.width()-3 {
+			suffix += total
 		}
 	}
 	if fit {
@@ -300,6 +321,10 @@ func (r *Renderer) record(frame []byte) {
 		return
 	}
 	r.event = e
+	if r.quiet {
+		r.active = true
+		return
+	}
 	if e.Done {
 		r.Clear()
 		mark := "✓"
@@ -332,6 +357,9 @@ func (r *Renderer) FlushPartial() {
 func (r *Renderer) Finish(code int) {
 	r.FlushPartial()
 	r.Clear()
+	if r.quiet {
+		return
+	}
 	// A full-screen native application owns terminal restoration. Do not
 	// inject cursor operations while its state may still be active.
 	if !r.endedLine || r.passthrough {

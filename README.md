@@ -61,6 +61,7 @@ epa config get progress
 | plain | Nonanimated output with recognized progress on a terminal; lifecycle messages and native streams otherwise. |
 | json | Newline-delimited lifecycle events on stdout, native output/prompts on stderr. |
 | native | Original backend streams and exit status, without the renderer. |
+| quiet | Suppresses EPA progress and recognized native progress records for interactive transactions. Unrecognized output, prompts and errors are retained; redirected streams and queries remain unfiltered. |
 
 The mode is saved per account; `--progress` overrides it for one invocation.
 A Linux pseudo-terminal preserves the controlling terminal and input used by

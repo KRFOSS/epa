@@ -22,6 +22,8 @@ jobs:
       - run: test -z "$(gofmt -l cmd internal)"
       - run: go test ./...
       - run: go vet ./...
+      - run: go test -race ./...
+      - run: go test ./internal/epa -run '^$' -fuzz '^FuzzParseProgress$' -fuzztime 10s -parallel 2
       - name: Interactive PTY integration
         run: |
           go test -c -o /tmp/epa-pty.test ./internal/epa
@@ -30,6 +32,12 @@ jobs:
       - run: |
           ./epa --version
           ./epa completion bash | bash -n
+          export PATH="$PWD:$PATH"
+          source <(epa completion bash)
+          COMP_WORDS=(epa install bas)
+          COMP_CWORD=2
+          _epa_complete
+          printf '%s\n' "${COMPREPLY[@]}" | grep -Fx bash
           ./epa --style apt --dry-run install bash -y
           ./epa --style pacman --dry-run -Syu
           ./epa __complete -- install bas | grep -Fx bash
@@ -39,8 +47,36 @@ jobs:
           sudo apt-get install -y zsh
           ./epa completion zsh > /tmp/epa-completion.zsh
           zsh -n /tmp/epa-completion.zsh
+          export PATH="$PWD:$PATH"
+          zsh -fc 'compdef() { :; }; compadd() { print -rl -- "${candidates[@]}"; }; source /tmp/epa-completion.zsh; words=(epa install bas); CURRENT=3; _epa_complete' | grep -Fx bash
       - name: Linux cross-builds
         run: |
           for arch in arm64 riscv64; do
             CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -o "/tmp/epa-$arch" ./cmd/epa
           done
+
+  native:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {image: 'debian:12', backend: apt}
+          - {image: 'ubuntu:24.04', backend: apt}
+          - {image: 'rockylinux/rockylinux:9', backend: dnf}
+          - {image: 'fedora:44', backend: dnf}
+          - {image: 'archlinux:base', backend: pacman}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+      - run: CGO_ENABLED=0 go build -trimpath -o epa ./cmd/epa
+      - name: Native transaction smoke test in a disposable container
+        env:
+          IMAGE: ${{ matrix.image }}
+          BACKEND: ${{ matrix.backend }}
+        run: |
+          docker run --rm --mount "type=bind,source=$PWD,target=/epa,readonly" \
+            "$IMAGE" bash /epa/tests/distro_smoke.sh /epa/epa "$BACKEND"
