@@ -85,13 +85,18 @@ func currentReleaseAsset() (string, error) {
 	return releaseAsset(runtime.GOARCH, arm)
 }
 
-// A self-update is never allowed to acquire privileges or replace a
-// system-managed installation. Restrict it to the user's default installer
-// path; custom and system paths must use the installer/package manager.
+// A self-update never acquires privileges. Only the default standalone
+// installer paths are eligible; package-manager and custom paths are excluded.
+type updateDirectory struct {
+	path string
+	info os.FileInfo
+}
+
 type updateTarget struct {
 	path string
 	info os.FileInfo
 	uid  uint32
+	dirs []updateDirectory
 }
 
 func ownedMode(info os.FileInfo, uid uint32) bool {
@@ -100,52 +105,68 @@ func ownedMode(info os.FileInfo, uid uint32) bool {
 }
 
 func checkedTarget(home, exe string, running os.FileInfo, uid uint32) (updateTarget, error) {
-	var target updateTarget
 	if uid == 0 {
-		return target, LocalizedErrorf("관리자 권한 없이 설치한 사용자 전용 EPA만 자동으로 교체할 수 있습니다.", "automatic replacement is restricted to unprivileged user installations")
+		return updateTarget{}, LocalizedErrorf("root 계정의 사용자 전용 설치는 자체 업데이트할 수 없습니다.", "self-update does not replace root-owned home installations")
 	}
 	if !filepath.IsAbs(home) || !filepath.IsAbs(exe) {
-		return target, LocalizedErrorf("실행 파일 또는 홈 디렉터리 경로가 올바르지 않습니다.", "invalid executable or home path")
+		return updateTarget{}, LocalizedErrorf("실행 파일 또는 홈 디렉터리 경로가 올바르지 않습니다.", "invalid executable or home path")
 	}
 	resolved, err := filepath.EvalSymlinks(home)
 	if err != nil {
-		return target, err
+		return updateTarget{}, err
 	}
 	expected := filepath.Join(resolved, ".local", "bin", "epa")
 	if filepath.Clean(exe) != expected {
-		return target, LocalizedErrorf("자체 업데이트는 사용자가 소유한 ~/.local/bin/epa 설치에만 지원됩니다.", "self-update requires the user-owned ~/.local/bin/epa installation")
+		return updateTarget{}, LocalizedErrorf("자체 업데이트는 사용자가 소유한 ~/.local/bin/epa 설치에만 지원됩니다.", "self-update requires the user-owned ~/.local/bin/epa installation")
 	}
-	// No symlink or writable directory on the user-controlled part of the path.
-	for _, dir := range []string{resolved, filepath.Join(resolved, ".local"), filepath.Dir(expected)} {
+	return checkedInstallTarget(expected, running, uid, []string{resolved, filepath.Join(resolved, ".local"), filepath.Dir(expected)})
+}
+
+// root is a filesystem prefix for isolated tests; production always uses /.
+// Every directory leading to the system installation must be owned by the
+// expected account and must not be a symlink or writable by other accounts.
+func checkedSystemTarget(root, exe string, running os.FileInfo, uid uint32) (updateTarget, error) {
+	if !filepath.IsAbs(root) || !filepath.IsAbs(exe) {
+		return updateTarget{}, LocalizedErrorf("실행 파일 경로가 올바르지 않습니다.", "invalid executable path")
+	}
+	root = filepath.Clean(root)
+	expected := filepath.Join(root, "usr", "local", "bin", "epa")
+	if filepath.Clean(exe) != expected {
+		return updateTarget{}, LocalizedErrorf("root 자체 업데이트는 기본 설치 경로인 /usr/local/bin/epa에만 지원됩니다.", "root self-update requires the default /usr/local/bin/epa installation")
+	}
+	return checkedInstallTarget(expected, running, uid, []string{root, filepath.Join(root, "usr"), filepath.Join(root, "usr", "local"), filepath.Dir(expected)})
+}
+
+func checkedInstallTarget(expected string, running os.FileInfo, uid uint32, dirs []string) (updateTarget, error) {
+	var target updateTarget
+	for _, dir := range dirs {
 		info, err := os.Lstat(dir)
 		if err != nil {
-			return target, err
+			return updateTarget{}, err
 		}
 		if !info.IsDir() || !ownedMode(info, uid) {
-			return target, LocalizedErrorf("안전하게 업데이트할 수 없는 디렉터리입니다: %s", "unsafe update directory: %s", dir)
+			return updateTarget{}, LocalizedErrorf("안전하게 업데이트할 수 없는 디렉터리입니다: %s", "unsafe update directory: %s", dir)
 		}
+		target.dirs = append(target.dirs, updateDirectory{dir, info})
 	}
 	info, err := os.Lstat(expected)
 	if err != nil {
-		return target, err
+		return updateTarget{}, err
 	}
 	if !info.Mode().IsRegular() || !ownedMode(info, uid) || info.Mode()&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky) != 0 || info.Mode().Perm()&0100 == 0 {
-		return target, LocalizedErrorf("안전하게 업데이트할 수 없는 실행 파일입니다: %s", "unsafe update executable: %s", expected)
+		return updateTarget{}, LocalizedErrorf("안전하게 업데이트할 수 없는 실행 파일입니다: %s", "unsafe update executable: %s", expected)
 	}
 	st := info.Sys().(*syscall.Stat_t)
 	if st.Nlink != 1 || running == nil || !os.SameFile(info, running) {
-		return target, LocalizedErrorf("실행 중인 EPA와 설치된 파일이 더 이상 일치하지 않습니다.", "the running EPA executable is no longer the installed file")
+		return updateTarget{}, LocalizedErrorf("실행 중인 EPA와 설치된 파일이 더 이상 일치하지 않습니다.", "the running EPA executable is no longer the installed file")
 	}
-	return updateTarget{expected, info, uid}, nil
+	target.path, target.info, target.uid = expected, info, uid
+	return target, nil
 }
 
 func currentUpdateTarget() (updateTarget, error) {
-	if os.Geteuid() == 0 || os.Getuid() != os.Geteuid() || os.Getenv("SUDO_USER") != "" {
-		return updateTarget{}, LocalizedErrorf("자체 업데이트는 root 또는 sudo 설치를 교체하지 않습니다. 기존 설치 방식으로 갱신하십시오.", "self-update does not replace root or sudo installations; use the installation method instead")
-	}
-	account, err := user.Current()
-	if err != nil {
-		return updateTarget{}, err
+	if os.Getuid() != os.Geteuid() || os.Getenv("SUDO_USER") != "" {
+		return updateTarget{}, LocalizedErrorf("sudo 또는 권한이 변경된 실행에서는 자체 업데이트를 지원하지 않습니다. 해당 계정에서 직접 실행하거나 기존 설치 방식으로 갱신하십시오.", "self-update is unavailable under sudo or changed privileges; run directly as the installation account or use the installer")
 	}
 	exe, err := os.Executable()
 	if err != nil {
@@ -155,10 +176,26 @@ func currentUpdateTarget() (updateTarget, error) {
 	if err != nil {
 		return updateTarget{}, err
 	}
+	if os.Geteuid() == 0 {
+		return checkedSystemTarget("/", exe, running, 0)
+	}
+	account, err := user.Current()
+	if err != nil {
+		return updateTarget{}, err
+	}
 	return checkedTarget(account.HomeDir, exe, running, uint32(os.Geteuid()))
 }
 
 func (t updateTarget) unchanged() error {
+	for _, dir := range t.dirs {
+		info, err := os.Lstat(dir.path)
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() || !ownedMode(info, t.uid) || !os.SameFile(info, dir.info) {
+			return LocalizedErrorf("자체 업데이트 도중 설치 디렉터리가 변경되었습니다: %s", "installation directory changed during self-update: %s", dir.path)
+		}
+	}
 	current, err := os.Lstat(t.path)
 	if err != nil {
 		return err

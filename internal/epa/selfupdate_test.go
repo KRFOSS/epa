@@ -107,7 +107,10 @@ func updateFixture(t *testing.T) (updateTarget, []byte, []byte) {
 	}
 	candidate := append(append([]byte(nil), old...), []byte("new EPA fixture")...)
 	dir := t.TempDir()
-	path := filepath.Join(dir, "epa")
+	path := filepath.Join(dir, "usr", "local", "bin", "epa")
+	if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
 	if err = os.WriteFile(path, old, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +118,11 @@ func updateFixture(t *testing.T) (updateTarget, []byte, []byte) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return updateTarget{path, st, uint32(os.Geteuid())}, old, candidate
+	target, err := checkedSystemTarget(dir, path, st, uint32(os.Geteuid()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return target, old, candidate
 }
 
 func TestUpdateFromRelease(t *testing.T) {
@@ -339,5 +346,103 @@ func TestSelfUpdateConfigAndCompletion(t *testing.T) {
 	}
 	if got := Complete("apt", []string{"--no-self-update", "up"}, Backend{}); !reflect.DeepEqual(got, []string{"update", "upgrade"}) {
 		t.Fatalf("completion: %v", got)
+	}
+}
+
+func TestSystemUpdateTarget(t *testing.T) {
+	uid := uint32(os.Geteuid())
+	prefix := t.TempDir()
+	dir := filepath.Join(prefix, "usr", "local", "bin")
+	path := filepath.Join(dir, "epa")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("test"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := checkedSystemTarget(prefix, path, info, uid)
+	if err != nil || target.path != path || len(target.dirs) != 4 {
+		t.Fatalf("target=%+v err=%v", target, err)
+	}
+	if _, err := checkedSystemTarget(prefix, filepath.Join(prefix, "usr", "bin", "epa"), info, uid); err == nil {
+		t.Fatal("package-manager path accepted")
+	}
+	if _, err := checkedSystemTarget(prefix, path, info, uid+1); err == nil {
+		t.Fatal("wrong owner accepted")
+	}
+	if err := os.Chmod(filepath.Dir(dir), 0777); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := checkedSystemTarget(prefix, path, info, uid); err == nil {
+		t.Fatal("writable ancestor accepted")
+	}
+	if err := target.unchanged(); err == nil {
+		t.Fatal("directory permission change missed")
+	}
+	if err := os.Chmod(filepath.Dir(dir), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(path, path+".link"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := checkedSystemTarget(prefix, path, info, uid); err == nil {
+		t.Fatal("hard link accepted")
+	}
+	if err := os.Remove(path + ".link"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(path, path+".real"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(path+".real", path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := checkedSystemTarget(prefix, path, info, uid); err == nil {
+		t.Fatal("symlink executable accepted")
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(path+".real", path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(dir, dir+".real"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(dir+".real", dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := checkedSystemTarget(prefix, path, info, uid); err == nil {
+		t.Fatal("symlink ancestor accepted")
+	}
+	if err := target.unchanged(); err == nil {
+		t.Fatal("directory replacement missed")
+	}
+}
+
+// Run exclusively from the copied test executable in a disposable container.
+// No live release download or executable replacement is performed here.
+func TestRootDefaultInstall(t *testing.T) {
+	if os.Getenv("EPA_TEST_ROOT_INSTALL") != "1" {
+		t.Skip("requires disposable root container")
+	}
+	if os.Getuid() != 0 || os.Geteuid() != 0 {
+		t.Fatal("expected root account")
+	}
+	t.Setenv("SUDO_USER", "")
+	target, err := currentUpdateTarget()
+	if err != nil || target.path != "/usr/local/bin/epa" || target.uid != 0 {
+		t.Fatalf("root target=%+v err=%v", target, err)
+	}
+	if !SelfUpdateEligible("0.1.2") {
+		t.Fatal("root default install not eligible")
+	}
+	t.Setenv("SUDO_USER", "operator")
+	if _, err := currentUpdateTarget(); err == nil {
+		t.Fatal("sudo execution accepted")
 	}
 }

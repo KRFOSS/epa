@@ -29,6 +29,12 @@ jobs:
         run: |
           go test -c -o /tmp/epa-pty.test ./internal/epa
           python3 tests/pty_integration.py /tmp/epa-pty.test
+      - name: Root self-update safety in disposable container
+        if: matrix.go == 'stable'
+        run: |
+          CGO_ENABLED=0 go test -c -o /tmp/epa-root-update.test ./internal/epa
+          docker run --rm --network none -e EPA_TEST_ROOT_INSTALL=1 --mount type=bind,source=/tmp/epa-root-update.test,target=/epa-test,readonly debian:12 \
+            sh -ec 'install -m 0755 /epa-test /usr/local/bin/epa; /usr/local/bin/epa -test.v -test.run "^(TestRootDefaultInstall|TestSystemUpdateTarget|TestUpdateFromRelease)$"'
       - run: CGO_ENABLED=0 go build -trimpath -o epa ./cmd/epa
       - name: 버전 및 드라이런
         shell: bash
