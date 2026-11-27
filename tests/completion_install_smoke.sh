@@ -16,7 +16,11 @@ export TEST_EPA_BIN="$work/bin"
 printf '%s\n' '# existing Bash configuration' > "$HOME/.bashrc"
 # Ensure the test bin directory survives PATH initialization on login.
 printf '%s\n' '# existing login configuration' 'export PATH="$TEST_EPA_BIN:$PATH"' > "$HOME/.profile"
-printf '%s\n' '# existing Zsh configuration' > "$HOME/.zshrc"
+mkdir "$work/insecure-zsh"
+chmod 0777 "$work/insecure-zsh"
+printf '%s\n' '#compdef epa-unsafe-fixture' ':' > "$work/insecure-zsh/_epa_unsafe_fixture"
+export TEST_EPA_INSECURE_FPATH="$work/insecure-zsh"
+printf '%s\n' '# existing Zsh configuration' 'fpath=("$TEST_EPA_INSECURE_FPATH" $fpath)' > "$HOME/.zshrc"
 epa completion install bash
 epa completion install zsh
 cp "$HOME/.bashrc" "$work/bashrc"
@@ -45,9 +49,10 @@ bash -lic "$bash_check"
 bash --noprofile --norc -c '! complete -p epa >/dev/null 2>&1'
 
 if command -v zsh >/dev/null 2>&1; then
-    zsh -ic '
+    zsh -d -ic '
         [[ "$HOME" == "$TEST_EPA_HOME" ]] || exit 1
         [[ "${_comps[epa]}" == _epa_complete ]] || exit 1
+        [[ -z "${_comps[epa-unsafe-fixture]-}" ]] || exit 1
         compadd() { print -rl -- "${candidates[@]}"; }
         words=(epa st)
         CURRENT=2
@@ -56,7 +61,7 @@ if command -v zsh >/dev/null 2>&1; then
     export ZDOTDIR="$work/zdotdir"
     mkdir -m 700 "$ZDOTDIR"
     epa completion install zsh
-    zsh -ic '[[ "${_comps[epa]}" == _epa_complete ]]'
+    zsh -d -ic '[[ "${_comps[epa]}" == _epa_complete ]]'
 else
     echo 'Zsh unavailable: skipping local Zsh runtime test' >&2
 fi

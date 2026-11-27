@@ -124,7 +124,7 @@ epa completion install bash  # Bash만 등록
 epa completion install zsh   # Zsh만 등록
 ```
 
-Bash는 `~/.bashrc`와 실제 로그인 시작 파일(`~/.bash_profile`, `~/.bash_login`, `~/.profile` 중 우선순위가 가장 높은 파일)을 사용합니다. Zsh는 `~/.zshrc` 또는 환경 변수로 내보낸 `ZDOTDIR`의 `.zshrc`를 사용합니다. 로더는 `~/.local/share/epa/completion/`에 설치됩니다. 기존에 등록된 자동완성은 그대로 유지하며, 공유 쓰기 권한이 있거나 심볼릭 링크·하드 링크인 설정 파일은 안전을 위해 자동 수정하지 않습니다. 자동완성 등록에 실패해도 검증된 EPA 바이너리 설치는 유지됩니다.
+Bash는 `~/.bashrc`와 실제 로그인 시작 파일(`~/.bash_profile`, `~/.bash_login`, `~/.profile` 중 우선순위가 가장 높은 파일)을 사용합니다. Zsh는 `~/.zshrc` 또는 환경 변수로 내보낸 `ZDOTDIR`의 `.zshrc`를 사용합니다. 로더는 `~/.local/share/epa/completion/`에 설치됩니다. 기존에 등록된 자동완성은 그대로 유지합니다. Zsh에서 초기화가 필요하면 `compinit -i`로 안전하지 않은 자동완성 경로를 제외합니다. 또한 공유 쓰기 권한이 있거나 심볼릭 링크·하드 링크인 설정 파일은 안전을 위해 자동 수정하지 않습니다. 자동완성 등록에 실패해도 검증된 EPA 바이너리 설치는 유지됩니다.
 
 `sudo`로 설치할 때는 다른 계정의 시작 파일을 변경하지 않습니다. EPA를 사용할 계정에서 `epa completion install`을 실행하세요. 자동 등록을 원하지 않으면 설치 명령의 `sh`에 `EPA_INSTALL_COMPLETION=0`을 지정할 수 있습니다.
 

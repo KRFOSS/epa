@@ -139,7 +139,8 @@ fi
 	return completionLoaderHeader + `if (( $+commands[epa] )); then
     if (( ! $+functions[compdef] )); then
         autoload -Uz compinit || return 0
-        compinit || return 0
+        # Ignore insecure completion directories; never bypass compaudit.
+        compinit -i || return 0
     fi
     if (( $+functions[compdef] )) && [[ -z "${_comps[epa]-}" ]]; then
         source <(command epa completion zsh) || :
