@@ -116,8 +116,14 @@ parsed:
 	if before[0] == "backend" && len(before) == 1 {
 		return matching([]string{"info"}, prefix)
 	}
-	if before[0] == "completion" && len(before) == 1 {
-		return matching([]string{"bash", "zsh"}, prefix)
+	if before[0] == "completion" {
+		if len(before) == 1 {
+			return matching([]string{"bash", "zsh", "install"}, prefix)
+		}
+		if len(before) == 2 && before[1] == "install" {
+			return matching([]string{"all", "bash", "zsh"}, prefix)
+		}
+		return nil
 	}
 	cmd := before[0]
 	// Use the parser's operation table, with a placeholder only for target-required actions.
