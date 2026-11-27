@@ -39,13 +39,13 @@ case "$backend" in
     run update
     test -f /var/cache/epa/pacman/.epa-ready
     native_digest > "$XDG_CONFIG_HOME/native.after"
-    cmp "$XDG_CONFIG_HOME/native.before" "$XDG_CONFIG_HOME/native.after"
+    test "$(sha256sum < "$XDG_CONFIG_HOME/native.before")" = "$(sha256sum < "$XDG_CONFIG_HOME/native.after")"
     run --dry-run search tree | grep -F '/var/cache/epa/pacman'
     run search tree | grep -F tree
     "$bin" __complete -- install tre | grep -Fx tree
     "$bin" --style pacman --progress native -Syy
     native_digest > "$XDG_CONFIG_HOME/native.after"
-    cmp "$XDG_CONFIG_HOME/native.before" "$XDG_CONFIG_HOME/native.after"
+    test "$(sha256sum < "$XDG_CONFIG_HOME/native.before")" = "$(sha256sum < "$XDG_CONFIG_HOME/native.after")"
     run --dry-run install tree -y > "$XDG_CONFIG_HOME/install.plan"
     if grep -F '/var/cache/epa/pacman' "$XDG_CONFIG_HOME/install.plan"; then exit 1; fi
     run --dry-run upgrade -y | grep -F '"-Syu"'
