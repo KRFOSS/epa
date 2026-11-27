@@ -62,6 +62,9 @@ jobs:
           zsh -n "$RUNNER_TEMP/epa-completion.zsh"
           export PATH="$PWD:$PATH"
           zsh -fc 'compdef() { :; }; compadd() { print -rl -- "${candidates[@]}"; }; source "$RUNNER_TEMP/epa-completion.zsh"; words=(epa install bas); CURRENT=3; _epa_complete' | grep -Fx bash
+      - name: 셸 자동완성 영구 등록 및 재접속
+        shell: bash
+        run: bash tests/completion_install_smoke.sh ./epa
       - name: Linux cross-builds
         run: |
           for arch in arm64 riscv64; do

@@ -33,7 +33,10 @@ SH
 chmod +x "$work/shims/"*
 export PATH="$work/shims:$PATH" HOME="$work/home"
 export TEST_MACHINE EXPECT_ARCH TEST_ELF
-unset EPA_BIN_DIR
+unset EPA_BIN_DIR ZDOTDIR SUDO_USER
+# Cross-architecture cases validate bytes; foreign binaries cannot run here.
+export EPA_INSTALL_COMPLETION=0
+export XDG_CONFIG_HOME="$HOME/.config"
 for spec in 'x86_64 amd64' 'i686 386' 'armv5tel armv5' 'armv6l armv6' 'armv7l armv7' 'armv8l armv7' 'aarch64 arm64' 'loongarch64 loong64' 'mips mips 1 2' 'mips mipsle 1 1' 'mips64 mips64 2 2' 'mips64 mips64le 2 1' 'ppc64 ppc64' 'ppc64le ppc64le' 'riscv64 riscv64' 's390x s390x'; do
     read -r TEST_MACHINE EXPECT_ARCH TEST_ELF <<< "$spec"
     sh "$ASSETS/install.sh" > "$work/log"
@@ -44,6 +47,18 @@ TEST_MACHINE=x86_64 EXPECT_ARCH=amd64
 export EPA_BIN_DIR="$work/bin with spaces"
 sh "$ASSETS/install.sh"
 [[ $("$EPA_BIN_DIR/epa" --version) == "epa $version" ]]
+test ! -e "$HOME/.bashrc"
+test ! -e "$HOME/.zshrc"
+unset EPA_INSTALL_COMPLETION
+sh "$ASSETS/install.sh"
+grep -Fx '# >>> EPA shell completion >>>' "$HOME/.bashrc"
+grep -Fx '# >>> EPA shell completion >>>' "$HOME/.profile"
+if command -v zsh >/dev/null 2>&1; then
+    grep -Fx '# >>> EPA shell completion >>>' "$HOME/.zshrc"
+fi
+cp "$HOME/.bashrc" "$work/bashrc.before"
+sh "$ASSETS/install.sh"
+cmp "$HOME/.bashrc" "$work/bashrc.before"
 for mode in corrupt missing; do
     if FETCH_MODE=$mode sh "$ASSETS/install.sh" > "$work/log" 2>&1; then
         echo "installer unexpectedly accepted $mode payload" >&2

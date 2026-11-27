@@ -43,6 +43,7 @@ EPA 공통 명령 (명령 스타일과 무관):
   self-update                       EPA 자체 업데이트
   doctor                            환경 진단
   completion bash|zsh               셸 자동완성 스크립트 출력
+  completion install [bash|zsh|all] 셸 자동완성 영구 등록
   --help, --version                 도움말 및 버전 확인
 
 공통 옵션:
@@ -86,6 +87,7 @@ EPA commands (independent of style):
   self-update                       Update EPA itself
   doctor                            Diagnose the environment
   completion bash|zsh               Print shell completion script
+  completion install [bash|zsh|all] Install persistent shell completion
   --help, --version                 Show help or version
 
 Common options:
@@ -295,8 +297,31 @@ parsed:
 		}
 		return 2, epa.LocalizedErrorf("잘못된 style 명령입니다.", "invalid style command")
 	case "completion":
+		if len(args) >= 2 && args[1] == "install" {
+			if dry || len(args) > 3 {
+				return 2, epa.LocalizedErrorf("사용법: epa completion install [bash|zsh|all] (--dry-run 사용 불가)", "usage: epa completion install [bash|zsh|all] (not with --dry-run)")
+			}
+			shell := "all"
+			if len(args) == 3 {
+				shell = args[2]
+			}
+			installed, err := epa.InstallCompletion(shell)
+			for _, s := range installed {
+				fmt.Println(epa.Text("자동완성 영구 등록:", "Persistent completion installed:"), s)
+			}
+			if len(installed) > 0 {
+				fmt.Println(epa.Text("새 대화형 셸부터 자동완성이 적용됩니다.", "Completion will be enabled in new interactive shells."))
+			}
+			if err != nil {
+				return 1, err
+			}
+			if len(installed) == 0 {
+				fmt.Println(epa.Text("설치된 Bash 또는 Zsh를 찾지 못했습니다.", "No installed Bash or Zsh found."))
+			}
+			return 0, nil
+		}
 		if len(args) != 2 {
-			return 2, epa.LocalizedErrorf("사용법: epa completion bash|zsh", "usage: epa completion bash|zsh")
+			return 2, epa.LocalizedErrorf("사용법: epa completion bash|zsh 또는 epa completion install [bash|zsh|all]", "usage: epa completion bash|zsh or epa completion install [bash|zsh|all]")
 		}
 		s, ok := epa.CompletionScript(args[1])
 		if !ok {

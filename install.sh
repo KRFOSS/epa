@@ -73,6 +73,16 @@ install -m 0755 -- "$work/$asset" "$stage"
 mv -fT -- "$stage" "$bin_dir/epa"
 stage=
 printf 'EPA 설치 완료: %s/epa\n' "$bin_dir"
+# Register completion only for the account running the installer.
+# A successful binary installation is not rolled back if a user's shell
+# configuration cannot safely be modified.
+if [ "${EPA_INSTALL_COMPLETION:-1}" != 0 ]; then
+    if [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ]; then
+        printf 'sudo로 설치하여 자동완성 등록은 생략합니다. 사용할 계정에서 epa completion install을 실행하세요.\n'
+    elif ! "$bin_dir/epa" completion install; then
+        printf '자동완성 등록을 완료하지 못했습니다. 사용자 계정에서 epa completion install을 다시 실행하세요.\n' >&2
+    fi
+fi
 case ":$PATH:" in
     *":$bin_dir:"*) ;;
     *) printf '이 경로를 PATH에 추가하거나 설치된 파일의 절대 경로로 실행하세요: %s\n' "$bin_dir" ;;
