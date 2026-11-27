@@ -86,7 +86,7 @@ func openPTY() (*os.File, *os.File, error) {
 // RunInteractive uses a PTY so the native manager keeps a controlling
 // terminal, including sudo, debconf and package-maintainer prompts.
 // Any setup failure before Start is returned without starting a transaction.
-func RunInteractive(binary string, args []string, backend string, plain bool, quiet ...bool) (int, bool, error) {
+func RunInteractive(binary string, args []string, backend, action string, plain bool, quiet ...bool) (int, bool, error) {
 	original, err := terminalState(os.Stdin)
 	if err != nil {
 		return 1, false, err
@@ -122,6 +122,7 @@ func RunInteractive(binary string, args []string, backend string, plain bool, qu
 	_ = slave.Close()
 
 	r := NewRenderer(os.Stdout, backend, func() int { return int(getSize(os.Stdout).Cols) }, os.Getenv("NO_COLOR") == "" && !plain, plain)
+	r.action = action
 	r.quiet = len(quiet) > 0 && quiet[0]
 	r.Paint()
 	done := make(chan struct{})

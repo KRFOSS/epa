@@ -43,7 +43,10 @@ func TestPlan(t *testing.T) {
 		{"pacman", "dnf", []string{"-R", "nginx"}, nil, true, false},
 		{"pacman", "pacman", []string{"-Rns", "nginx"}, []string{"-Rns", "--", "nginx"}, false, false},
 		{"apt", "apt", []string{"remove", "nginx+"}, nil, true, false},
-		{"pacman", "apt", []string{"-Syyu"}, nil, true, false},
+		{"pacman", "apt", []string{"-Syy"}, []string{"-o", "Acquire::http::No-Cache=true", "-o", "Acquire::https::No-Cache=true", "update"}, false, false},
+		{"pacman", "apt", []string{"-Syyu"}, []string{"upgrade", "--with-new-pkgs", "--no-remove"}, false, true},
+		{"pacman", "dnf", []string{"-Syy"}, []string{"--refresh", "makecache"}, false, false},
+		{"pacman", "dnf", []string{"-Syyu"}, []string{"--refresh", "upgrade"}, false, false},
 		{"pacman", "dnf", []string{"-Syu", "nginx"}, nil, true, false},
 		{"dnf", "pacman", []string{"upgrade", "nginx"}, nil, true, false},
 		{"apt", "dnf", []string{"clean"}, []string{"clean", "packages"}, false, false},
@@ -62,6 +65,9 @@ func TestPlan(t *testing.T) {
 		}
 		if err != nil || !reflect.DeepEqual(plan.Args, tt.want) || plan.RefreshBefore != tt.refresh {
 			t.Errorf("%s %v on %s: %+v, %v; want %v", tt.style, tt.args, tt.backend, plan, err, tt.want)
+		}
+		if tt.refresh && !reflect.DeepEqual(plan.RefreshArgs, aptRefreshArgs(op.ForceRefresh)) {
+			t.Errorf("%s %v: invalid preliminary refresh args: %v", tt.style, tt.args, plan.RefreshArgs)
 		}
 	}
 }

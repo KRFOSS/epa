@@ -63,7 +63,10 @@ var aptRules = []eventRule{
 	rule(`^Reading package lists\.\.\.\s*(Done)?$`, "Reading metadata", 0, 0),
 	rule(`^Building dependency tree\.\.\.\s*([0-9]{1,3})%$`, "Resolving dependencies", 0, 1),
 	rule(`^Building dependency tree\.\.\.\s*(Done)?$`, "Resolving dependencies", 0, 0),
+	rule(`^Reading state information\.\.\.\s*([0-9]{1,3})%$`, "Reading installed state", 0, 1),
 	rule(`^Reading state information\.\.\.\s*(Done)?$`, "Reading installed state", 0, 0),
+	rule(`^Calculating upgrade\.\.\.\s*([0-9]{1,3})%$`, "Calculating upgrade", 0, 1),
+	rule(`^Calculating upgrade\.\.\.\s*(Done)?$`, "Calculating upgrade", 0, 0),
 	rule(`^Progress:\s*\[\s*([0-9]{1,3})%\s*\]\s*\[[#. =-]*\]$`, "Applying transaction", 0, 1),
 	rule(`^([0-9]{1,3})%\s*\[Working\]$`, "Downloading metadata or packages", 0, 1),
 }
@@ -118,7 +121,7 @@ func ParseProgress(backend, line string) (ProgressEvent, bool) {
 		e := ProgressEvent{Phase: r.phase}
 		// A 100% bar is not proof of success. Only explicit native
 		// completion records can mark an individual phase complete.
-		e.Done = backend == "apt" && (line == "Reading package lists... Done" || line == "Building dependency tree... Done" || line == "Reading state information... Done")
+		e.Done = backend == "apt" && (line == "Reading package lists... Done" || line == "Building dependency tree... Done" || line == "Reading state information... Done" || line == "Calculating upgrade... Done")
 		if r.itemGroup != 0 {
 			e.Item = m[r.itemGroup]
 		}
@@ -142,13 +145,16 @@ var eraseLine = regexp.MustCompile(`\x1b\[(?:0|2)?K`)
 // other cursor-control output disables rewriting for the rest of the run.
 type Renderer struct {
 	out                                      io.Writer
-	backend                                  string
+	backend, action                          string
 	width                                    func() int
 	color                                    bool
 	plain, quiet                             bool
 	event                                    ProgressEvent
 	active, drawn, passthrough, continuation bool
 	endedLine                                bool
+	skipLF                                   bool
+	aptAwaiting, aptDeclined, aptAborted     bool
+	aptAnswer                                string
 	spin                                     int
 	pending                                  []byte
 	lastProgress                             string
@@ -213,6 +219,8 @@ func phaseLabel(phase string) string {
 		return "의존성 확인 중"
 	case "Reading installed state":
 		return "설치 상태 확인 중"
+	case "Calculating upgrade":
+		return "업그레이드 계획 확인 중"
 	case "Applying transaction":
 		return "패키지 변경 적용 중"
 	case "Downloading metadata or packages":
@@ -338,6 +346,9 @@ func (r *Renderer) native(data []byte) {
 	if len(data) == 0 {
 		return
 	}
+	if strings.TrimSpace(string(data)) != "" {
+		r.aptDeclined, r.aptAborted = false, false
+	}
 	r.Clear()
 	r.active = false
 	r.out.Write(data)
@@ -375,13 +386,30 @@ func (r *Renderer) Consume(data []byte) {
 
 func (r *Renderer) record(frame []byte) {
 	if r.continuation {
+		awaiting := r.aptAwaiting
+		declined := awaiting && aptNegativeAnswer(r.aptAnswer+strings.TrimRight(string(frame), "\r\n"))
+		r.aptAwaiting = false
+		r.aptAnswer = ""
 		r.native(frame)
+		if awaiting {
+			r.aptDeclined = declined
+		}
 		r.continuation = false
 		return
 	}
-	if len(frame) == 1 && (frame[0] == '\r' || frame[0] == '\n') && r.active && r.endedLine {
-		return
+	if len(frame) == 1 && r.endedLine {
+		// APT prefixes rewritten progress records with bare carriage
+		// returns, even after completed lines. They must not turn an
+		// empty row into a partial native prompt.
+		if frame[0] == '\r' && r.backend == "apt" {
+			return
+		}
+		if r.active || (frame[0] == '\n' && r.skipLF) {
+			r.skipLF = false
+			return
+		}
 	}
+	r.skipLF = false
 	clean := strings.TrimRight(string(frame), "\r\n")
 	clean = sgr.ReplaceAllString(clean, "")
 	clean = eraseLine.ReplaceAllString(clean, "")
@@ -391,6 +419,25 @@ func (r *Renderer) record(frame []byte) {
 		if (c < 32 && c != '\t') || c == 127 {
 			r.passthrough = true
 			r.native(frame)
+			return
+		}
+	}
+	if r.backend == "apt" && !r.quiet && r.endedLine {
+		if label, answer, ok := aptConfirmation(clean); ok {
+			r.native([]byte(label + string(frame[len(strings.TrimRight(string(frame), "\r\n")):])))
+			r.aptDeclined = aptNegativeAnswer(answer)
+			return
+		}
+		if clean == "Abort." && r.aptDeclined {
+			r.native([]byte(Text("작업 취소.", "Aborted.") + string(frame[len(strings.TrimRight(string(frame), "\r\n")):])))
+			r.aptAborted = true
+			return
+		}
+		if strings.TrimSpace(clean) != "" {
+			r.aptDeclined, r.aptAborted = false, false
+		}
+		if label, ok := aptLineLabel(clean); ok {
+			r.native([]byte(label + string(frame[len(strings.TrimRight(string(frame), "\r\n")):])))
 			return
 		}
 	}
@@ -415,7 +462,8 @@ func (r *Renderer) record(frame []byte) {
 		if r.color {
 			mark = "\x1b[32m" + mark + "\x1b[0m"
 		}
-		fmt.Fprintf(r.out, "%s %s\r\n", mark, phaseLabel(e.Phase))
+		fmt.Fprintf(r.out, "%s %s\r\n", mark, phaseDoneLabel(e.Phase))
+		r.skipLF = frame[len(frame)-1] == '\r'
 		r.active = false
 		return
 	}
@@ -432,6 +480,25 @@ func (r *Renderer) FlushPartial() {
 	}
 	if bytes.ContainsAny(r.pending, "\x1b\x08") {
 		r.passthrough = true
+	}
+	if r.backend == "apt" && !r.quiet && !r.passthrough && !r.continuation && r.endedLine {
+		if label, answer, ok := aptConfirmation(string(r.pending)); ok {
+			r.native([]byte(label))
+			r.aptAwaiting = true
+			r.aptAnswer = answer
+			r.aptDeclined, r.aptAborted = false, false
+			r.pending = r.pending[:0]
+			r.continuation = true
+			return
+		}
+	}
+	if r.aptAwaiting {
+		if len(r.aptAnswer)+len(r.pending) <= 8 {
+			r.aptAnswer += string(r.pending)
+		} else {
+			r.aptAwaiting = false
+			r.aptAnswer = ""
+		}
 	}
 	r.native(r.pending)
 	r.pending = r.pending[:0]
@@ -450,12 +517,21 @@ func (r *Renderer) Finish(code int) {
 		fmt.Fprint(r.out, "\r\n")
 	}
 	mark, msg := "✓", Text("완료", "Completed")
+	if r.action != "" {
+		msg = fmt.Sprintf(Text("%s 완료", "%s completed"), actionLabel(r.action))
+	}
 	if code != 0 {
 		mark, msg = "×", fmt.Sprintf(Text("실패 (종료 코드 %d, 마지막 확인 단계: %s)", "Failed (exit %d; last observed stage: %s)"), code, phaseLabel(r.event.Phase))
 	}
+	cancelled := code == 130 || (code == 1 && r.aptAborted)
+	if cancelled {
+		mark, msg = "-", fmt.Sprintf(Text("작업 취소 (종료 코드 %d)", "Cancelled (exit %d)"), code)
+	}
 	if r.color {
 		c := "32"
-		if code != 0 {
+		if cancelled {
+			c = "33"
+		} else if code != 0 {
 			c = "31"
 		}
 		mark = "\x1b[" + c + "m" + mark + "\x1b[0m"

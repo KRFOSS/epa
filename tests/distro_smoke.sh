@@ -11,7 +11,7 @@ backend=${2:?expected backend required}
 run() { "$bin" --style apt --progress native "$@"; }
 "$bin" backend info | grep -F "백엔드: $backend ("
 case "$backend" in
- apt|dnf) run update ;;
+ apt|dnf) run update; "$bin" --style pacman --progress native -Syy ;;
  pacman) run full-upgrade -y ;;
  *) exit 2 ;;
 esac
