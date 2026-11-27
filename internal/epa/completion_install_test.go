@@ -183,7 +183,7 @@ func TestCompletionInstallCandidates(t *testing.T) {
 		if got := Complete(style, []string{"completion", "in"}, Backend{}); !reflect.DeepEqual(got, []string{"install"}) {
 			t.Errorf("%s: %v", style, got)
 		}
-		if got := Complete(style, []string{"completion", "install", ""}, Backend{}); !reflect.DeepEqual(got, []string{"all", "bash", "zsh"}) {
+		if got := Complete(style, []string{"completion", "install", ""}, Backend{}); !reflect.DeepEqual(got, []string{"all", "bash", "fish", "zsh"}) {
 			t.Errorf("%s: %v", style, got)
 		}
 	}

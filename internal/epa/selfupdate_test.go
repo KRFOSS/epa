@@ -442,6 +442,11 @@ func TestRootDefaultInstall(t *testing.T) {
 		t.Fatal("root default install not eligible")
 	}
 	t.Setenv("SUDO_USER", "operator")
+	t.Setenv("SUDO_COMMAND", "/bin/bash")
+	if _, err := currentUpdateTarget(); err != nil {
+		t.Fatalf("root login shell rejected: %v", err)
+	}
+	t.Setenv("SUDO_COMMAND", "/usr/local/bin/epa self-update")
 	if _, err := currentUpdateTarget(); err == nil {
 		t.Fatal("sudo execution accepted")
 	}

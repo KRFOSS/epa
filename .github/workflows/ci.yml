@@ -34,7 +34,7 @@ jobs:
         run: |
           CGO_ENABLED=0 go test -c -o /tmp/epa-root-update.test ./internal/epa
           docker run --rm --network none -e EPA_TEST_ROOT_INSTALL=1 --mount type=bind,source=/tmp/epa-root-update.test,target=/epa-test,readonly debian:12 \
-            sh -ec 'install -m 0755 /epa-test /usr/local/bin/epa; /usr/local/bin/epa -test.v -test.run "^(TestRootDefaultInstall|TestSystemUpdateTarget|TestUpdateFromRelease)$"'
+            sh -ec 'install -m 0755 /epa-test /usr/local/bin/epa; /usr/local/bin/epa -test.v -test.run "^(TestRootDefaultInstall|TestRootAccountPaths|TestSystemUpdateTarget|TestUpdateFromRelease)$"'
       - run: CGO_ENABLED=0 go build -trimpath -o epa ./cmd/epa
       - name: 버전 및 드라이런
         shell: bash
@@ -47,7 +47,7 @@ jobs:
         run: |
           echo "XDG_CONFIG_HOME=$(mktemp -d)" >> "$GITHUB_ENV"
           sudo apt-get update
-          sudo apt-get install -y zsh
+          sudo apt-get install -y zsh fish
           apt-cache pkgnames bas | grep -Fx bash
       - name: Bash 자동완성
         shell: bash
