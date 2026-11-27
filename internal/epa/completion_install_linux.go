@@ -220,13 +220,13 @@ func bashLoginFile(home string) (string, error) {
 // does not edit system files or run a shell. With "all", only available shells
 // are registered; an explicit shell can be configured before installing it.
 func InstallCompletion(shell string) ([]string, error) {
-	if os.Getuid() != os.Geteuid() || (os.Geteuid() == 0 && os.Getenv("SUDO_USER") != "") {
+	if os.Getuid() != os.Geteuid() || DirectSudo() {
 		return nil, LocalizedErrorf("자동완성은 사용할 계정에서 sudo 없이 등록하십시오.", "install completion from the intended account without sudo")
 	}
-	if shell != "all" && shell != "bash" && shell != "zsh" {
+	if shell != "all" && shell != "bash" && shell != "zsh" && shell != "fish" {
 		return nil, LocalizedErrorf("지원하지 않는 셸입니다: %q", "unsupported shell %q", shell)
 	}
-	home, err := os.UserHomeDir()
+	home, err := accountHome()
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +246,7 @@ func InstallCompletion(shell string) ([]string, error) {
 	shells := []string{shell}
 	if shell == "all" {
 		shells = nil
-		for _, s := range []string{"bash", "zsh"} {
+		for _, s := range []string{"bash", "zsh", "fish"} {
 			if _, err := exec.LookPath(s); err == nil {
 				shells = append(shells, s)
 			}
@@ -264,7 +264,49 @@ func InstallCompletion(shell string) ([]string, error) {
 	return installed, errors.Join(failures...)
 }
 
+func ensureCompletionDirectory(path string) error {
+	err := safeCompletionDirectory(path)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	parent := filepath.Dir(path)
+	if parent == path {
+		return err
+	}
+	if err := ensureCompletionDirectory(parent); err != nil {
+		return err
+	}
+	if err := os.Mkdir(path, 0700); err != nil && !errors.Is(err, os.ErrExist) {
+		return err
+	}
+	return safeCompletionDirectory(path)
+}
+
+func installFishCompletion() error {
+	dir, err := accountConfigDir()
+	if err != nil {
+		return err
+	}
+	if err := ensureCompletionDirectory(dir); err != nil {
+		return err
+	}
+	for _, part := range []string{"fish", "completions"} {
+		dir = filepath.Join(dir, part)
+		if err := ensureCompletionDirectory(dir); err != nil {
+			return err
+		}
+	}
+	loader := completionLoaderHeader + "if type -q epa\n    command epa completion fish | source\nend\n"
+	return installCompletionLoader(filepath.Join(dir, "epa.fish"), loader)
+}
+
 func installShellCompletion(home, dir, shell string) error {
+	if shell == "fish" {
+		return installFishCompletion()
+	}
 	var files []string
 	if shell == "bash" {
 		login, err := bashLoginFile(home)
@@ -274,6 +316,9 @@ func installShellCompletion(home, dir, shell string) error {
 		files = []string{filepath.Join(home, ".bashrc"), login}
 	} else {
 		zdotdir := os.Getenv("ZDOTDIR")
+		if inheritedRootEnvironment() {
+			zdotdir = home
+		}
 		if zdotdir == "" {
 			zdotdir = home
 		}

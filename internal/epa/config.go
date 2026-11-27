@@ -14,15 +14,51 @@ type Config struct {
 	Language   string `json:"language"`
 }
 
-func configPath() (string, error) {
+func accountConfigDir() (string, error) {
 	dir, err := os.UserConfigDir()
+	if inheritedRootEnvironment() {
+		home, homeErr := accountHome()
+		if homeErr != nil {
+			return "", homeErr
+		}
+		if err := safeCompletionDirectory(home); err != nil {
+			return "", err
+		}
+		dir, err = filepath.Join(home, ".config"), nil
+		// Do not follow an account's symlink or shared writable config dir.
+		if err := safeCompletionDirectory(dir); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+	}
 	if err != nil {
 		return "", err
 	}
 	if !filepath.IsAbs(dir) {
 		return "", LocalizedErrorf("설정 디렉터리는 절대 경로여야 합니다.", "configuration directory must be absolute")
 	}
-	return filepath.Join(dir, "epa", "config.json"), nil
+	return filepath.Clean(dir), nil
+}
+
+func configPath() (string, error) {
+	dir, err := accountConfigDir()
+	if err != nil {
+		return "", err
+	}
+	dir = filepath.Join(dir, "epa")
+	path := filepath.Join(dir, "config.json")
+	if inheritedRootEnvironment() {
+		if err := safeCompletionDirectory(dir); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+		if info, err := os.Lstat(path); err == nil {
+			if !safeCompletionFile(info) {
+				return "", LocalizedErrorf("안전하지 않은 설정 파일입니다: %s", "unsafe configuration file: %s", path)
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+	}
+	return path, nil
 }
 
 func LoadConfig() (Config, error) {

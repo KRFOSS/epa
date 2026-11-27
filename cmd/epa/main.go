@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -42,8 +43,8 @@ EPA 공통 명령 (명령 스타일과 무관):
                                     출력 언어 조회 및 설정
   self-update                       EPA 자체 업데이트
   doctor                            환경 진단
-  completion bash|zsh               셸 자동완성 스크립트 출력
-  completion install [bash|zsh|all] 셸 자동완성 영구 등록
+  completion bash|zsh|fish               셸 자동완성 스크립트 출력
+  completion install [bash|zsh|fish|all] 셸 자동완성 영구 등록
   --help, --version                 도움말 및 버전 확인
 
 공통 옵션:
@@ -86,8 +87,8 @@ EPA commands (independent of style):
                                     Query or set output language
   self-update                       Update EPA itself
   doctor                            Diagnose the environment
-  completion bash|zsh               Print shell completion script
-  completion install [bash|zsh|all] Install persistent shell completion
+  completion bash|zsh|fish               Print shell completion script
+  completion install [bash|zsh|fish|all] Install persistent shell completion
   --help, --version                 Show help or version
 
 Common options:
@@ -127,7 +128,7 @@ func run(args []string) (int, error) {
 	}
 	// Korean is the default, even in the C locale. Do not consume a
 	// configuration belonging to a different account under sudo.
-	viaSudo := os.Geteuid() == 0 && os.Getenv("SUDO_USER") != ""
+	viaSudo := epa.DirectSudo()
 	epa.SetLanguage("ko")
 	if !viaSudo {
 		if c, err := epa.LoadConfig(); err == nil {
@@ -299,7 +300,7 @@ parsed:
 	case "completion":
 		if len(args) >= 2 && args[1] == "install" {
 			if dry || len(args) > 3 {
-				return 2, epa.LocalizedErrorf("사용법: epa completion install [bash|zsh|all] (--dry-run 사용 불가)", "usage: epa completion install [bash|zsh|all] (not with --dry-run)")
+				return 2, epa.LocalizedErrorf("사용법: epa completion install [bash|zsh|fish|all] (--dry-run 사용 불가)", "usage: epa completion install [bash|zsh|fish|all] (not with --dry-run)")
 			}
 			shell := "all"
 			if len(args) == 3 {
@@ -316,12 +317,12 @@ parsed:
 				return 1, err
 			}
 			if len(installed) == 0 {
-				fmt.Println(epa.Text("설치된 Bash 또는 Zsh를 찾지 못했습니다.", "No installed Bash or Zsh found."))
+				fmt.Println(epa.Text("설치된 Bash, Zsh 또는 Fish를 찾지 못했습니다.", "No installed Bash, Zsh or Fish found."))
 			}
 			return 0, nil
 		}
 		if len(args) != 2 {
-			return 2, epa.LocalizedErrorf("사용법: epa completion bash|zsh 또는 epa completion install [bash|zsh|all]", "usage: epa completion bash|zsh or epa completion install [bash|zsh|all]")
+			return 2, epa.LocalizedErrorf("사용법: epa completion bash|zsh|fish 또는 epa completion install [bash|zsh|fish|all]", "usage: epa completion bash|zsh|fish or epa completion install [bash|zsh|fish|all]")
 		}
 		s, ok := epa.CompletionScript(args[1])
 		if !ok {
@@ -382,6 +383,9 @@ parsed:
 	if plan.Note != "" {
 		fmt.Fprintln(os.Stderr, "epa:", plan.Note)
 	}
+	if b.Name == "pacman" && (op.Action == epa.Search || op.Action == epa.Info || op.Action == epa.Outdated) {
+		plan.Args = epa.PacmanQueryArgs(plan.Args)
+	}
 	native, argv, err := invocation(plan.Binary, plan.Args, plan.Privileged, dry)
 	if err != nil {
 		return 1, err
@@ -421,6 +425,16 @@ parsed:
 		printPlan(native, argv)
 		return 0, nil
 	}
+	// An isolated refresh must publish the readiness marker only after a
+	// successful native refresh. Do not exec away the parent in this case.
+	var isolated *epa.PacmanRefresh
+	if plan.IsolatedRefresh {
+		isolated, err = epa.PreparePacmanRefresh(runPrivilegedSetup)
+		if err != nil {
+			return 1, err
+		}
+		defer isolated.Close()
+	}
 	// Decide only after the dry-run and refresh-before path. A failed
 	// preliminary refresh must not start a self-update.
 	autoUpdate := false
@@ -429,12 +443,17 @@ parsed:
 			autoUpdate = c.SelfUpdate
 		}
 	}
-	if mode == epa.ProgressNative && !autoUpdate {
+	if mode == epa.ProgressNative && !autoUpdate && isolated == nil {
 		// Native mode keeps original streams, signals and exit status.
 		err = syscall.Exec(native, append([]string{native}, argv...), os.Environ())
 		return 1, err
 	}
 	code, err := runCommand(native, argv, b.Name, string(op.Action), mode, interactive)
+	if code == 0 && err == nil && isolated != nil {
+		if err := isolated.Finish(runPrivilegedSetup); err != nil {
+			return 1, err
+		}
+	}
 	if code == 0 && err == nil && autoUpdate {
 		// An optional EPA download must never turn a successful package
 		// manager operation into a failure or overwrite its exit code.
@@ -476,6 +495,16 @@ func runCommand(binary string, args []string, backend, action string, mode epa.P
 		}
 	}
 	return epa.RunPlain(binary, args, mode, action)
+}
+
+func runPrivilegedSetup(binary string, args []string) error {
+	binary, args, err := invocation(binary, args, true, false)
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command(binary, args...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stderr, os.Stderr
+	return cmd.Run()
 }
 
 func invocation(binary string, args []string, privileged, dry bool) (string, []string, error) {
