@@ -2,7 +2,6 @@ package epa
 
 import (
 	"bufio"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -68,15 +67,15 @@ func Detect() (Backend, error) {
 				return Backend{name, p}, nil
 			}
 		}
-		return Backend{}, fmt.Errorf("%s detected, but its supported package manager is unavailable", id)
+		return Backend{}, LocalizedErrorf("%s 배포판을 감지했으나 지원되는 패키지 관리자를 찾을 수 없습니다.", "%s detected, but its supported package manager is unavailable", id)
 	}
-	return Backend{}, fmt.Errorf("unsupported distribution %q (supported backends: apt, dnf, pacman)", data["ID"])
+	return Backend{}, LocalizedErrorf("지원하지 않는 배포판입니다: %q (지원 백엔드: apt, dnf, pacman)", "unsupported distribution %q (supported backends: apt, dnf, pacman)", data["ID"])
 }
 
 func (b Backend) helper(name string) (string, error) {
 	p := systemBinary(name)
 	if p == "" {
-		return "", fmt.Errorf("required backend tool %s not found", name)
+		return "", LocalizedErrorf("필수 백엔드 도구 %s를 찾을 수 없습니다.", "required backend tool %s not found", name)
 	}
 	return p, nil
 }
@@ -84,22 +83,22 @@ func (b Backend) helper(name string) (string, error) {
 func (b Backend) Build(o Operation) (Plan, error) {
 	p := Plan{Binary: b.Binary, Privileged: o.Mutates()}
 	unsupported := func(reason string) (Plan, error) {
-		return Plan{}, fmt.Errorf("%s cannot safely perform %s: %s", b.Name, o.Action, reason)
+		return Plan{}, LocalizedErrorf("%s에서 %s 작업을 안전하게 수행할 수 없습니다: %s", "%s cannot safely perform %s: %s", b.Name, o.Action, reason)
 	}
 	if o.Action == FullUpgrade && len(o.Packages) > 0 && o.Style != b.Name {
-		return unsupported("targeted and combined upgrades have different semantics across backends")
+		return unsupported(Text("특정 패키지 업그레이드와 결합된 업그레이드는 백엔드마다 동작 방식이 다릅니다.", "targeted and combined upgrades have different semantics across backends"))
 	}
 	if o.NoSave && b.Name != "pacman" {
-		return unsupported("the requested configuration removal semantics are unavailable")
+		return unsupported(Text("요청한 구성 파일 제거 방식을 지원하지 않습니다.", "the requested configuration removal semantics are unavailable"))
 	}
 	if o.Needed && b.Name != "pacman" {
-		return unsupported("--needed has no verified equivalent")
+		return unsupported(Text("--needed와 동일하게 동작하는 검증된 옵션이 없습니다.", "--needed has no verified equivalent"))
 	}
 	if o.Recursive && b.Name == "apt" {
-		return unsupported("recursive removal semantics differ")
+		return unsupported(Text("재귀적 제거 동작 방식이 다릅니다.", "recursive removal semantics differ"))
 	}
 	if o.ForceRefresh && b.Name != "pacman" {
-		return unsupported("forced refresh has no verified equivalent")
+		return unsupported(Text("강제 갱신과 동일하게 동작하는 검증된 명령이 없습니다.", "forced refresh has no verified equivalent"))
 	}
 	if o.RefreshFirst && o.Action == FullUpgrade && b.Name == "apt" {
 		p.RefreshBefore = true
@@ -115,7 +114,7 @@ func (b Backend) Build(o Operation) (Plan, error) {
 		case Remove:
 			for _, target := range o.Packages {
 				if strings.HasSuffix(target, "+") {
-					return unsupported("APT interprets a trailing plus as an installation modifier")
+					return unsupported(Text("APT는 패키지 이름 끝의 + 기호를 설치 지시로 해석합니다.", "APT interprets a trailing plus as an installation modifier"))
 				}
 			}
 			p.Args = []string{"remove"}
@@ -123,12 +122,12 @@ func (b Backend) Build(o Operation) (Plan, error) {
 			p.Args = []string{"upgrade", "--with-new-pkgs", "--no-remove"}
 		case FullUpgrade:
 			if len(o.Packages) > 0 {
-				return unsupported("targeted upgrades are not supported")
+				return unsupported(Text("특정 패키지만 업그레이드하는 기능을 지원하지 않습니다.", "targeted upgrades are not supported"))
 			}
 			// A non-APT upgrade style does not imply permission for APT dist-upgrade.
 			if o.Style != "apt" {
 				p.Args = []string{"upgrade", "--with-new-pkgs", "--no-remove"}
-				p.Note = "Using conservative APT upgrade semantics."
+				p.Note = Text("패키지 제거를 허용하지 않는 보수적인 APT 업그레이드 방식을 사용합니다.", "Using conservative APT upgrade semantics.")
 			} else {
 				p.Args = []string{"dist-upgrade"}
 			}
@@ -160,11 +159,11 @@ func (b Backend) Build(o Operation) (Plan, error) {
 			p.Args = []string{"install", "--reinstall", "--no-remove"}
 		case Clean:
 			if o.Style != "apt" {
-				return unsupported("APT cache cleanup semantics differ")
+				return unsupported(Text("APT의 캐시 정리 동작 방식이 다릅니다.", "APT cache cleanup semantics differ"))
 			}
 			p.Args = []string{"clean"}
 		default:
-			return unsupported("unsupported action")
+			return unsupported(Text("지원하지 않는 작업입니다.", "unsupported action"))
 		}
 		if o.Yes {
 			p.Args = append(p.Args, "-y")
@@ -181,15 +180,15 @@ func (b Backend) Build(o Operation) (Plan, error) {
 				p.Args = append(p.Args, "--noautoremove")
 			}
 			if o.Style == "pacman" {
-				return unsupported("DNF may remove dependent packages that pacman -R would refuse to remove")
+				return unsupported(Text("DNF는 pacman -R이 제거를 거부할 의존 패키지까지 제거할 수 있습니다.", "DNF may remove dependent packages that pacman -R would refuse to remove"))
 			}
 		case Upgrade:
 			p.Args = []string{"--setopt=obsoletes=False", "upgrade"}
-			p.Note = "DNF applies its native transaction policy, including install-only package limits."
+			p.Note = Text("DNF의 설치 전용 패키지 수 제한을 포함한 기본 트랜잭션 정책을 적용합니다.", "DNF applies its native transaction policy, including install-only package limits.")
 		case FullUpgrade:
 			p.Args = []string{"upgrade"}
 			if o.Style == "apt" {
-				p.Note = "DNF applies its native upgrade policy."
+				p.Note = Text("DNF의 기본 업그레이드 정책을 적용합니다.", "DNF applies its native upgrade policy.")
 			}
 		case Search:
 			p.Args = []string{"search"}
@@ -209,14 +208,14 @@ func (b Backend) Build(o Operation) (Plan, error) {
 			p.Args = []string{"reinstall"}
 		case Clean:
 			if o.Style == "pacman" {
-				return unsupported("pacman cache cleanup semantics differ")
+				return unsupported(Text("pacman의 캐시 정리 동작 방식이 다릅니다.", "pacman cache cleanup semantics differ"))
 			}
 			p.Args = []string{"clean", "packages"}
 			if o.Style == "dnf" {
 				p.Args[1] = "all"
 			}
 		default:
-			return unsupported("unsupported action")
+			return unsupported(Text("지원하지 않는 작업입니다.", "unsupported action"))
 		}
 		if o.RefreshFirst && o.Action == FullUpgrade {
 			p.Args = append([]string{"--refresh"}, p.Args...)
@@ -227,9 +226,9 @@ func (b Backend) Build(o Operation) (Plan, error) {
 	case "pacman":
 		switch o.Action {
 		case Refresh:
-			return unsupported("standalone refresh can lead to a partial upgrade; use epa --style pacman -Syu")
+			return unsupported(Text("저장소 정보만 갱신하면 부분 업그레이드가 발생할 수 있습니다. epa --style pacman -Syu를 사용하십시오.", "standalone refresh can lead to a partial upgrade; use epa --style pacman -Syu"))
 		case Upgrade:
-			return unsupported("APT upgrade cannot guarantee no removals; use full-upgrade or epa --style pacman -Syu")
+			return unsupported(Text("pacman에서 APT upgrade와 동일한 패키지 제거 금지 동작을 보장할 수 없습니다. full-upgrade 또는 epa --style pacman -Syu를 사용하십시오.", "APT upgrade cannot guarantee no removals; use full-upgrade or epa --style pacman -Syu"))
 		case FullUpgrade:
 			if o.Style == "pacman" && !o.RefreshFirst {
 				p.Args = []string{"-Su"}
@@ -238,15 +237,15 @@ func (b Backend) Build(o Operation) (Plan, error) {
 			} else {
 				p.Args = []string{"-Syu"}
 				if o.Style != "pacman" {
-					p.Note = "A full Arch upgrade refreshes repositories and upgrades the entire system."
+					p.Note = Text("Arch의 전체 업그레이드는 저장소 정보를 갱신하고 시스템 전체를 업그레이드합니다.", "A full Arch upgrade refreshes repositories and upgrades the entire system.")
 				}
 			}
 		case Install:
 			p.Args = []string{"-S"}
-			p.Note = "Use a fully upgraded Arch system; EPA never refreshes metadata alone before installing."
+			p.Note = Text("Arch 시스템을 최신 상태로 유지하십시오. EPA는 설치 전에 저장소 정보만 단독으로 갱신하지 않습니다.", "Use a fully upgraded Arch system; EPA never refreshes metadata alone before installing.")
 		case Remove:
 			if o.Style != "pacman" {
-				p.Note = "Pacman refuses removals that would break dependencies."
+				p.Note = Text("Pacman은 의존성이 깨지는 패키지 제거를 거부합니다.", "Pacman refuses removals that would break dependencies.")
 			}
 			p.Args = []string{"-R"}
 			if o.Recursive && o.NoSave {
@@ -266,15 +265,15 @@ func (b Backend) Build(o Operation) (Plan, error) {
 			p.Args = []string{"-Qu"}
 		case Clean:
 			if o.Style != "pacman" {
-				return unsupported("pacman cache cleanup semantics differ")
+				return unsupported(Text("pacman의 캐시 정리 동작 방식이 다릅니다.", "pacman cache cleanup semantics differ"))
 			}
 			p.Args = []string{"-Sc"}
 		case Reinstall:
 			p.Args = []string{"-S"}
 		case Autoremove:
-			return unsupported("orphan removal requires an explicit package selection")
+			return unsupported(Text("고아 패키지를 제거하려면 대상 패키지를 직접 선택해야 합니다.", "orphan removal requires an explicit package selection"))
 		default:
-			return unsupported("unsupported action")
+			return unsupported(Text("지원하지 않는 작업입니다.", "unsupported action"))
 		}
 		if o.Yes {
 			p.Args = append(p.Args, "--noconfirm")
@@ -283,7 +282,7 @@ func (b Backend) Build(o Operation) (Plan, error) {
 			p.Args = append(p.Args, "--needed")
 		}
 	default:
-		return unsupported("unknown backend")
+		return unsupported(Text("알 수 없는 백엔드입니다.", "unknown backend"))
 	}
 	if len(o.Packages) > 0 {
 		p.Args = append(p.Args, "--")

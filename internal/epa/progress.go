@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
+	"unicode"
 )
 
 // ProgressMode controls presentation only; it must never change the native
@@ -198,10 +198,65 @@ func (r *Renderer) Paint() {
 	r.drawn = true
 }
 
+// Translate presentation labels only. Keep parser rules, event identifiers,
+// JSON values and unrecognized backend output unchanged.
+func phaseLabel(phase string) string {
+	if Language() == "en" {
+		return phase
+	}
+	switch phase {
+	case "Running package manager":
+		return "패키지 관리자 실행 중"
+	case "Reading metadata":
+		return "저장소 정보 읽는 중"
+	case "Resolving dependencies":
+		return "의존성 확인 중"
+	case "Reading installed state":
+		return "설치 상태 확인 중"
+	case "Applying transaction":
+		return "패키지 변경 적용 중"
+	case "Downloading metadata or packages":
+		return "저장소 정보 또는 패키지 다운로드 중"
+	case "Checking conflicts":
+		return "패키지 충돌 확인 중"
+	case "Downloading packages":
+		return "패키지 다운로드 중"
+	case "Checking packages":
+		return "패키지 검사 중"
+	case "Checking transaction":
+		return "패키지 변경 검사 중"
+	case "Testing transaction":
+		return "패키지 변경 사전 검사 중"
+	default:
+		return phase
+	}
+}
+
+func itemLabel(event ProgressEvent) string {
+	if Language() == "en" {
+		return event.Item
+	}
+	if event.Phase == "Checking packages" {
+		switch event.Item {
+		case "checking keys in keyring":
+			return "키링의 키 확인"
+		case "checking package integrity":
+			return "패키지 무결성 검사"
+		case "loading package files":
+			return "패키지 파일 불러오기"
+		case "checking for file conflicts":
+			return "파일 충돌 검사"
+		case "checking available disk space":
+			return "사용 가능한 디스크 공간 확인"
+		}
+	}
+	return event.Item
+}
+
 func (r *Renderer) text(fit bool) string {
-	text := r.event.Phase
+	text := phaseLabel(r.event.Phase)
 	if r.event.Item != "" {
-		text += ": " + r.event.Item
+		text += ": " + itemLabel(r.event)
 	}
 	suffix := ""
 	if r.event.Percent != nil {
@@ -218,8 +273,8 @@ func (r *Renderer) text(fit bool) string {
 		}
 	}
 	if r.event.Overall != nil {
-		total := fmt.Sprintf(" · total %d%%", *r.event.Overall)
-		if !fit || utf8.RuneCountInString(suffix+total)+2 < r.width()-3 {
+		total := fmt.Sprintf(Text(" · 전체 %d%%", " · total %d%%"), *r.event.Overall)
+		if !fit || displayWidth(suffix+total)+2 < r.width()-3 {
 			suffix += total
 		}
 	}
@@ -228,26 +283,55 @@ func (r *Renderer) text(fit bool) string {
 		if limit < 1 {
 			limit = 1
 		}
-		if utf8.RuneCountInString(suffix) >= limit {
+		if displayWidth(suffix) >= limit {
 			suffix = ""
 		}
-		text = truncate(text, limit-utf8.RuneCountInString(suffix))
+		text = truncate(text, limit-displayWidth(suffix))
 	}
 	return text + suffix
+}
+
+// Korean syllables and common East Asian full-width characters occupy two
+// terminal cells. Combining marks and format characters occupy no cells.
+// Treat ambiguous-width punctuation as narrow, as most terminals do.
+func cellWidth(r rune) int {
+	if unicode.IsControl(r) || unicode.Is(unicode.Mn, r) || unicode.Is(unicode.Me, r) || unicode.Is(unicode.Cf, r) {
+		return 0
+	}
+	if (r >= 0x1100 && r <= 0x115f) || r == 0x2329 || r == 0x232a ||
+		(r >= 0x2e80 && r <= 0xa4cf && r != 0x303f) ||
+		(r >= 0xac00 && r <= 0xd7a3) || (r >= 0xf900 && r <= 0xfaff) ||
+		(r >= 0xfe10 && r <= 0xfe19) || (r >= 0xfe30 && r <= 0xfe6f) ||
+		(r >= 0xff00 && r <= 0xff60) || (r >= 0xffe0 && r <= 0xffe6) ||
+		(r >= 0x20000 && r <= 0x3fffd) {
+		return 2
+	}
+	return 1
+}
+
+func displayWidth(s string) int {
+	n := 0
+	for _, r := range s {
+		n += cellWidth(r)
+	}
+	return n
 }
 
 func truncate(s string, n int) string {
 	if n <= 0 {
 		return ""
 	}
-	rs := []rune(s)
-	if len(rs) <= n {
+	if displayWidth(s) <= n {
 		return s
 	}
-	if n == 1 {
-		return string(rs[:1])
+	width := 0
+	for i, r := range s {
+		width += cellWidth(r)
+		if width > n-1 {
+			return s[:i] + "…"
+		}
 	}
-	return string(rs[:n-1]) + "…"
+	return s
 }
 
 func (r *Renderer) native(data []byte) {
@@ -331,7 +415,7 @@ func (r *Renderer) record(frame []byte) {
 		if r.color {
 			mark = "\x1b[32m" + mark + "\x1b[0m"
 		}
-		fmt.Fprintf(r.out, "%s %s\r\n", mark, e.Phase)
+		fmt.Fprintf(r.out, "%s %s\r\n", mark, phaseLabel(e.Phase))
 		r.active = false
 		return
 	}
@@ -365,9 +449,9 @@ func (r *Renderer) Finish(code int) {
 	if !r.endedLine || r.passthrough {
 		fmt.Fprint(r.out, "\r\n")
 	}
-	mark, msg := "✓", "Completed"
+	mark, msg := "✓", Text("완료", "Completed")
 	if code != 0 {
-		mark, msg = "×", fmt.Sprintf("Failed (exit %d; last observed stage: %s)", code, r.event.Phase)
+		mark, msg = "×", fmt.Sprintf(Text("실패 (종료 코드 %d, 마지막 확인 단계: %s)", "Failed (exit %d; last observed stage: %s)"), code, phaseLabel(r.event.Phase))
 	}
 	if r.color {
 		c := "32"
@@ -377,6 +461,40 @@ func (r *Renderer) Finish(code int) {
 		mark = "\x1b[" + c + "m" + mark + "\x1b[0m"
 	}
 	fmt.Fprintf(r.out, "%s %s · %s\r\n", mark, msg, time.Since(r.started).Round(100*time.Millisecond))
+}
+
+func actionLabel(action string) string {
+	if Language() == "en" {
+		return action
+	}
+	switch Action(action) {
+	case Refresh:
+		return "저장소 정보 갱신"
+	case Install:
+		return "패키지 설치"
+	case Remove:
+		return "패키지 제거"
+	case Upgrade:
+		return "패키지 업그레이드"
+	case FullUpgrade:
+		return "전체 업그레이드"
+	case Search:
+		return "패키지 검색"
+	case Info:
+		return "패키지 정보 조회"
+	case List:
+		return "패키지 목록 조회"
+	case Outdated:
+		return "업그레이드 후보 조회"
+	case Autoremove:
+		return "불필요한 패키지 제거"
+	case Reinstall:
+		return "패키지 재설치"
+	case Clean:
+		return "패키지 캐시 정리"
+	default:
+		return action
+	}
 }
 
 func EmitLifecycle(out io.Writer, mode ProgressMode, state, action string, code int, elapsed time.Duration) {
@@ -391,9 +509,15 @@ func EmitLifecycle(out io.Writer, mode ProgressMode, state, action string, code 
 		_ = json.NewEncoder(out).Encode(e)
 	} else if mode == ProgressPlain {
 		if state == "started" {
-			fmt.Fprintf(out, "[EPA] %s: started\n", action)
+			fmt.Fprintf(out, Text("[EPA] %s: 시작\n", "[EPA] %s: started\n"), actionLabel(action))
 		} else {
-			fmt.Fprintf(out, "[EPA] %s: %s (exit %d, %s)\n", action, state, code, elapsed.Round(100*time.Millisecond))
+			label := state
+			if state == "completed" {
+				label = Text("완료", "completed")
+			} else if state == "failed" {
+				label = Text("실패", "failed")
+			}
+			fmt.Fprintf(out, Text("[EPA] %s: %s (종료 코드 %d, %s)\n", "[EPA] %s: %s (exit %d, %s)\n"), actionLabel(action), label, code, elapsed.Round(100*time.Millisecond))
 		}
 	}
 }

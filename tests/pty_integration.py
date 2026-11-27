@@ -62,11 +62,11 @@ def run(binary, scenario, expected, send_when=None, reply=None, resize=False):
 
 binary = os.path.abspath(sys.argv[1])
 data = run(binary, "prompt", 100, b"Replace configuration? [Y/n] ", b"n\n")
-assert b"42%" in data and b"Answer: n" in data and b"signature verification failed" in data and b"exit 100" in data, data
+assert b"42%" in data and b"Answer: n" in data and b"signature verification failed" in data and "종료 코드 100".encode() in data, data
 data = run(binary, "success", 0)
-assert b"42%" in data and b"90%" in data and b"Completed" in data, data
+assert b"42%" in data and b"90%" in data and "완료".encode() in data, data
 data = run(binary, "interrupt", 130, b"42%", b"\x03")
-assert b"exit 130" in data, data
+assert "종료 코드 130".encode() in data, data
 data = run(binary, "full-screen", 0, b"Choose an option: ", b"yes\n")
 assert b"Answer: yes" in data and b"\x1b[?1049h" in data and b"\x1b[?1049l" in data, data
 data = run(binary, "resize", 0, b"42%", resize=True)

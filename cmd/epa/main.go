@@ -13,7 +13,91 @@ import (
 
 var version = "0.1.0-dev"
 
-const help = "EPA - Everyone's Package Adapter\n\nUsage: epa [--style apt|dnf|pacman] [--progress auto|tty|plain|json|native|quiet] [--dry-run] [--no-self-update] COMMAND [ARGS]\n\nDefault APT-style commands:\n  update, upgrade, full-upgrade, install, remove, search, show,\n  list, outdated, autoremove, reinstall, clean\n\nEPA commands (independent of style):\n  style list|current|set NAME|reset\n  backend info\n  config get progress | set progress MODE\n  config get self-update | set self-update on|off\n  self-update\n  doctor\n  completion bash|zsh\n  --help, --version\n\nUse --dry-run before COMMAND to print the native command without running it.\nOptions are style-specific. Unsupported options and operations fail closed.\n"
+const helpKO = `EPA - Everyone's Package Adapter
+
+사용법: epa [--language ko|en] [--style apt|dnf|pacman] [--progress auto|tty|plain|json|native|quiet] [--dry-run] [--no-self-update] 명령 [인수]
+
+기본 APT 스타일 명령:
+  update           저장소 정보 갱신
+  upgrade          설치된 패키지 업그레이드
+  full-upgrade     전체 업그레이드
+  install          패키지 설치
+  remove           패키지 제거
+  search           패키지 검색
+  show             패키지 정보 조회
+  list             설치된 패키지 목록 조회
+  outdated         업그레이드 가능한 패키지 조회
+  autoremove       불필요한 의존 패키지 제거
+  reinstall        패키지 재설치
+  clean            패키지 캐시 정리
+
+EPA 공통 명령 (명령 스타일과 무관):
+  style list|current|set NAME|reset  명령 스타일 조회 및 설정
+  backend info                      현재 백엔드 확인
+  config get progress | set progress MODE
+                                    진행 표시 방식 조회 및 설정
+  config get self-update | set self-update on|off
+                                    자동 자체 업데이트 조회 및 설정
+  config get language | set language ko|en
+                                    출력 언어 조회 및 설정
+  self-update                       EPA 자체 업데이트
+  doctor                            환경 진단
+  completion bash|zsh               셸 자동완성 스크립트 출력
+  --help, --version                 도움말 및 버전 확인
+
+공통 옵션:
+  --language       이번 실행의 출력 언어 지정 (기본값: ko)
+  --style          사용할 명령 스타일 지정
+  --progress       진행 표시 방식 지정
+  --dry-run        명령을 실행하지 않고 백엔드 명령 확인
+  --no-self-update 이번 실행에서 자동 자체 업데이트 생략
+
+옵션은 선택한 명령 스타일에 따라 달라집니다.
+지원하지 않거나 안전하게 변환할 수 없는 작업은 실행하지 않습니다.
+`
+
+const helpEN = `EPA - Everyone's Package Adapter
+
+Usage: epa [--language ko|en] [--style apt|dnf|pacman] [--progress auto|tty|plain|json|native|quiet] [--dry-run] [--no-self-update] COMMAND [ARGS]
+
+Default APT-style commands:
+  update           Refresh repository metadata
+  upgrade          Upgrade installed packages
+  full-upgrade     Perform a full upgrade
+  install          Install packages
+  remove           Remove packages
+  search           Search for packages
+  show             Show package information
+  list             List installed packages
+  outdated         List upgradable packages
+  autoremove       Remove unnecessary dependencies
+  reinstall        Reinstall packages
+  clean            Clean package caches
+
+EPA commands (independent of style):
+  style list|current|set NAME|reset  Query or set command style
+  backend info                      Show the active backend
+  config get progress | set progress MODE
+                                    Query or set progress mode
+  config get self-update | set self-update on|off
+                                    Query or set automatic self-update
+  config get language | set language ko|en
+                                    Query or set output language
+  self-update                       Update EPA itself
+  doctor                            Diagnose the environment
+  completion bash|zsh               Print shell completion script
+  --help, --version                 Show help or version
+
+Common options:
+  --language       Override output language for this invocation (default: ko)
+  --style          Select a command style
+  --progress       Select a progress mode
+  --dry-run        Show the native command without running it
+  --no-self-update Skip automatic self-update for this invocation
+
+Options are style-specific.
+Unsupported or unsafe operations are not executed.
+`
 
 func main() {
 	code, err := run(os.Args[1:])
@@ -39,21 +123,37 @@ func run(args []string) (int, error) {
 		}
 		return 0, nil
 	}
+	// Korean is the default, even in the C locale. Do not consume a
+	// configuration belonging to a different account under sudo.
+	viaSudo := os.Geteuid() == 0 && os.Getenv("SUDO_USER") != ""
+	epa.SetLanguage("ko")
+	if !viaSudo {
+		if c, err := epa.LoadConfig(); err == nil {
+			epa.SetLanguage(c.Language)
+		}
+	}
+	languageOverride := false
 	style := ""
 	progress := ""
 	dry := false
 	noSelfUpdate := false
 	for len(args) > 0 {
 		switch args[0] {
+		case "--language":
+			if len(args) < 2 || !epa.SetLanguage(args[1]) {
+				return 2, epa.LocalizedErrorf("--language에 ko 또는 en을 지정해야 합니다.", "--language requires ko or en")
+			}
+			languageOverride = true
+			args = args[2:]
 		case "--style":
 			if len(args) < 2 || !epa.ValidStyle(args[1]) {
-				return 2, fmt.Errorf("--style requires apt, dnf or pacman")
+				return 2, epa.LocalizedErrorf("--style에 apt, dnf 또는 pacman을 지정해야 합니다.", "--style requires apt, dnf or pacman")
 			}
 			style = args[1]
 			args = args[2:]
 		case "--progress":
 			if len(args) < 2 || !epa.ValidProgressMode(args[1]) {
-				return 2, fmt.Errorf("--progress requires auto, tty, plain, json, native or quiet")
+				return 2, epa.LocalizedErrorf("--progress에 auto, tty, plain, json, native 또는 quiet를 지정해야 합니다.", "--progress requires auto, tty, plain, json, native or quiet")
 			}
 			progress = args[1]
 			args = args[2:]
@@ -65,12 +165,12 @@ func run(args []string) (int, error) {
 			args = args[1:]
 		case "--version":
 			if len(args) != 1 {
-				return 2, fmt.Errorf("unexpected arguments after --version")
+				return 2, epa.LocalizedErrorf("--version 뒤에는 인수를 지정할 수 없습니다.", "unexpected arguments after --version")
 			}
 			fmt.Println("epa", version)
 			return 0, nil
 		case "--help", "-h":
-			fmt.Print(help)
+			fmt.Print(epa.Text(helpKO, helpEN))
 			return 0, nil
 		default:
 			goto parsed
@@ -78,19 +178,36 @@ func run(args []string) (int, error) {
 	}
 parsed:
 	if len(args) == 0 {
-		fmt.Print(help)
+		fmt.Print(epa.Text(helpKO, helpEN))
 		return 0, nil
 	}
-	viaSudo := os.Geteuid() == 0 && os.Getenv("SUDO_USER") != ""
 	switch args[0] {
 	case "self-update":
 		if len(args) != 1 || dry || noSelfUpdate {
-			return 2, fmt.Errorf("usage: epa self-update (not with --dry-run or --no-self-update)")
+			return 2, epa.LocalizedErrorf("사용법: epa self-update (--dry-run 또는 --no-self-update와 함께 사용할 수 없습니다.)", "usage: epa self-update (not with --dry-run or --no-self-update)")
 		}
 		return performSelfUpdate(false, false)
 	case "config":
 		if viaSudo {
-			return 2, fmt.Errorf("manage configuration without sudo")
+			return 2, epa.LocalizedErrorf("sudo를 사용하지 않고 설정을 관리하십시오.", "manage configuration without sudo")
+		}
+		if len(args) == 3 && args[1] == "get" && args[2] == "language" {
+			c, err := epa.LoadConfig()
+			if err != nil {
+				return 1, err
+			}
+			fmt.Println(c.Language)
+			return 0, nil
+		}
+		if len(args) == 4 && args[1] == "set" && args[2] == "language" && !dry {
+			if err := epa.SaveLanguage(args[3]); err != nil {
+				return 2, err
+			}
+			if !languageOverride {
+				epa.SetLanguage(args[3])
+			}
+			fmt.Println(epa.Text("출력 언어:", "Language:"), args[3])
+			return 0, nil
 		}
 		if len(args) == 3 && args[1] == "get" && args[2] == "self-update" {
 			c, err := epa.LoadConfig()
@@ -106,12 +223,12 @@ parsed:
 		}
 		if len(args) == 4 && args[1] == "set" && args[2] == "self-update" && !dry {
 			if args[3] != "on" && args[3] != "off" {
-				return 2, fmt.Errorf("self-update must be on or off")
+				return 2, epa.LocalizedErrorf("self-update에 on 또는 off를 지정해야 합니다.", "self-update must be on or off")
 			}
 			if err := epa.SaveSelfUpdate(args[3] == "on"); err != nil {
 				return 1, err
 			}
-			fmt.Println("Self-update:", args[3])
+			fmt.Println(epa.Text("자체 업데이트:", "Self-update:"), args[3])
 			return 0, nil
 		}
 		if len(args) == 3 && args[1] == "get" && args[2] == "progress" {
@@ -126,27 +243,27 @@ parsed:
 			if err := epa.SaveProgress(args[3]); err != nil {
 				return 2, err
 			}
-			fmt.Println("Progress:", args[3])
+			fmt.Println(epa.Text("진행 표시 방식:", "Progress:"), args[3])
 			return 0, nil
 		}
-		return 2, fmt.Errorf("usage: epa config get progress|self-update | set progress MODE | set self-update on|off")
+		return 2, epa.LocalizedErrorf("사용법: epa config get progress|self-update|language | set progress MODE | set self-update on|off | set language ko|en", "usage: epa config get progress|self-update|language | set progress MODE | set self-update on|off | set language ko|en")
 	case "style":
 		if len(args) < 2 {
-			return 2, fmt.Errorf("usage: epa style list|current|set NAME|reset")
+			return 2, epa.LocalizedErrorf("사용법: epa style list|current|set NAME|reset", "usage: epa style list|current|set NAME|reset")
 		}
 		switch args[1] {
 		case "list":
 			if len(args) != 2 {
-				return 2, fmt.Errorf("unexpected arguments")
+				return 2, epa.LocalizedErrorf("지원하지 않는 추가 인수가 있습니다.", "unexpected arguments")
 			}
 			fmt.Println(strings.Join(epa.Styles, "\n"))
 			return 0, nil
 		case "current":
 			if len(args) != 2 {
-				return 2, fmt.Errorf("unexpected arguments")
+				return 2, epa.LocalizedErrorf("지원하지 않는 추가 인수가 있습니다.", "unexpected arguments")
 			}
 			if viaSudo {
-				return 2, fmt.Errorf("query the style from the original account without sudo")
+				return 2, epa.LocalizedErrorf("원래 사용자 계정에서 sudo 없이 명령 스타일을 조회하십시오.", "query the style from the original account without sudo")
 			}
 			s, err := epa.LoadStyle()
 			if err != nil {
@@ -156,58 +273,58 @@ parsed:
 			return 0, nil
 		case "set", "reset":
 			if viaSudo {
-				return 2, fmt.Errorf("change the style without sudo, in the account that will use EPA")
+				return 2, epa.LocalizedErrorf("EPA를 사용할 계정에서 sudo 없이 명령 스타일을 변경하십시오.", "change the style without sudo, in the account that will use EPA")
 			}
 			if dry {
-				return 2, fmt.Errorf("style changes cannot be combined with --dry-run")
+				return 2, epa.LocalizedErrorf("명령 스타일 변경과 --dry-run을 함께 사용할 수 없습니다.", "style changes cannot be combined with --dry-run")
 			}
 			if args[1] == "set" && len(args) == 3 {
 				if err := epa.SaveStyle(args[2]); err != nil {
 					return 2, err
 				}
-				fmt.Println("Style:", args[2])
+				fmt.Println(epa.Text("명령 스타일:", "Style:"), args[2])
 				return 0, nil
 			}
 			if args[1] == "reset" && len(args) == 2 {
 				if err := epa.ResetStyle(); err != nil {
 					return 1, err
 				}
-				fmt.Println("Style: apt")
+				fmt.Println(epa.Text("명령 스타일: apt", "Style: apt"))
 				return 0, nil
 			}
 		}
-		return 2, fmt.Errorf("invalid style command")
+		return 2, epa.LocalizedErrorf("잘못된 style 명령입니다.", "invalid style command")
 	case "completion":
 		if len(args) != 2 {
-			return 2, fmt.Errorf("usage: epa completion bash|zsh")
+			return 2, epa.LocalizedErrorf("사용법: epa completion bash|zsh", "usage: epa completion bash|zsh")
 		}
 		s, ok := epa.CompletionScript(args[1])
 		if !ok {
-			return 2, fmt.Errorf("unsupported shell %q", args[1])
+			return 2, epa.LocalizedErrorf("지원하지 않는 셸입니다: %q", "unsupported shell %q", args[1])
 		}
 		fmt.Print(s)
 		return 0, nil
 	case "backend", "doctor":
 		if (args[0] == "backend" && (len(args) != 2 || args[1] != "info")) || (args[0] == "doctor" && len(args) != 1) {
-			return 2, fmt.Errorf("usage: epa backend info or epa doctor")
+			return 2, epa.LocalizedErrorf("사용법: epa backend info 또는 epa doctor", "usage: epa backend info or epa doctor")
 		}
 		b, err := epa.Detect()
 		if err != nil {
 			return 1, err
 		}
-		fmt.Printf("Backend: %s (%s)\n", b.Name, b.Binary)
+		fmt.Printf(epa.Text("백엔드: %s (%s)\n", "Backend: %s (%s)\n"), b.Name, b.Binary)
 		if args[0] == "doctor" && !viaSudo {
 			s, err := epa.LoadStyle()
 			if err != nil {
 				return 1, err
 			}
-			fmt.Println("Style:", s)
+			fmt.Println(epa.Text("명령 스타일:", "Style:"), s)
 		}
 		return 0, nil
 	}
 	if style == "" {
 		if viaSudo {
-			return 2, fmt.Errorf("sudo epa requires --style to avoid changing command meanings; normally run epa directly")
+			return 2, epa.LocalizedErrorf("sudo epa를 실행할 때는 명령의 의미가 달라지지 않도록 --style을 지정해야 합니다. 일반적으로 epa를 직접 실행하십시오.", "sudo epa requires --style to avoid changing command meanings; normally run epa directly")
 		}
 		var err error
 		style, err = epa.LoadStyle()
@@ -298,7 +415,7 @@ parsed:
 		// manager operation into a failure or overwrite its exit code.
 		_, updateErr := performSelfUpdate(true, mode == epa.ProgressQuiet)
 		if updateErr != nil {
-			fmt.Fprintln(os.Stderr, "epa: self-update skipped:", updateErr)
+			fmt.Fprintln(os.Stderr, epa.Text("epa: 자체 업데이트를 건너뜁니다:", "epa: self-update skipped:"), updateErr)
 		}
 	}
 	return code, err
@@ -308,16 +425,16 @@ func performSelfUpdate(automatic, quiet bool) (int, error) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer cancel()
 	if !quiet {
-		fmt.Fprintln(os.Stderr, "EPA: checking for a new release...")
+		fmt.Fprintln(os.Stderr, epa.Text("EPA: 새로운 정식 릴리스를 확인하는 중...", "EPA: checking for a new release..."))
 	}
 	result, err := epa.SelfUpdate(ctx, version)
 	if err != nil {
 		return 1, err
 	}
 	if result.Updated {
-		fmt.Fprintf(os.Stderr, "EPA: %s -> %s; the new version will run next time.\n", version, result.Version)
+		fmt.Fprintf(os.Stderr, epa.Text("EPA: %s -> %s 업데이트 완료. 다음 실행부터 새 버전을 사용합니다.\n", "EPA: %s -> %s; the new version will run next time.\n"), version, result.Version)
 	} else if !automatic || !quiet {
-		fmt.Fprintln(os.Stderr, "EPA: no newer stable release.")
+		fmt.Fprintln(os.Stderr, epa.Text("EPA: 설치된 버전보다 새로운 정식 릴리스가 없습니다.", "EPA: no newer stable release."))
 	}
 	return 0, nil
 }
@@ -328,7 +445,7 @@ func runCommand(binary string, args []string, backend, action string, mode epa.P
 		if started {
 			return code, err
 		}
-		fmt.Fprintln(os.Stderr, "epa: terminal renderer unavailable; using unfiltered backend output:", err)
+		fmt.Fprintln(os.Stderr, epa.Text("epa: 터미널 진행 표시를 사용할 수 없어 백엔드 원본 출력을 표시합니다:", "epa: terminal renderer unavailable; using unfiltered backend output:"), err)
 		if mode != epa.ProgressQuiet {
 			mode = epa.ProgressPlain
 		}
@@ -348,7 +465,7 @@ func invocation(binary string, args []string, privileged, dry bool) (string, []s
 	if dry {
 		return "/usr/bin/sudo", append([]string{"--", binary}, args...), nil
 	}
-	return "", nil, fmt.Errorf("sudo is not installed; run as root with an explicit --style")
+	return "", nil, epa.LocalizedErrorf("sudo가 설치되어 있지 않습니다. root 계정에서 --style을 명시하여 실행하십시오.", "sudo is not installed; run as root with an explicit --style")
 }
 
 func printPlan(binary string, args []string) {

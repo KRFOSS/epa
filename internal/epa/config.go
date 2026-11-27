@@ -3,7 +3,6 @@ package epa
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -12,6 +11,7 @@ type Config struct {
 	Style      string `json:"style"`
 	Progress   string `json:"progress,omitempty"`
 	SelfUpdate bool   `json:"self_update"`
+	Language   string `json:"language"`
 }
 
 func configPath() (string, error) {
@@ -20,13 +20,13 @@ func configPath() (string, error) {
 		return "", err
 	}
 	if !filepath.IsAbs(dir) {
-		return "", fmt.Errorf("configuration directory must be absolute")
+		return "", LocalizedErrorf("설정 디렉터리는 절대 경로여야 합니다.", "configuration directory must be absolute")
 	}
 	return filepath.Join(dir, "epa", "config.json"), nil
 }
 
 func LoadConfig() (Config, error) {
-	c := Config{Style: "apt", Progress: "auto", SelfUpdate: true}
+	c := Config{Style: "apt", Progress: "auto", SelfUpdate: true, Language: "ko"}
 	path, err := configPath()
 	if err != nil {
 		return c, err
@@ -39,13 +39,16 @@ func LoadConfig() (Config, error) {
 		return c, err
 	}
 	if err := json.Unmarshal(data, &c); err != nil {
-		return c, fmt.Errorf("invalid EPA config: %w", err)
+		return c, LocalizedErrorf("EPA 설정이 올바르지 않습니다: %w", "invalid EPA config: %w", err)
 	}
 	if !ValidStyle(c.Style) {
-		return c, fmt.Errorf("invalid configured style %q", c.Style)
+		return c, LocalizedErrorf("설정된 명령 스타일이 올바르지 않습니다: %q", "invalid configured style %q", c.Style)
 	}
 	if !ValidProgressMode(c.Progress) {
-		return c, fmt.Errorf("invalid configured progress mode %q", c.Progress)
+		return c, LocalizedErrorf("설정된 진행 표시 방식이 올바르지 않습니다: %q", "invalid configured progress mode %q", c.Progress)
+	}
+	if !ValidLanguage(c.Language) {
+		return c, LocalizedErrorf("설정된 언어가 올바르지 않습니다: %q", "invalid configured language %q", c.Language)
 	}
 	return c, nil
 }
@@ -85,7 +88,7 @@ func saveConfig(c Config) error {
 
 func SaveStyle(style string) error {
 	if !ValidStyle(style) {
-		return fmt.Errorf("unknown style %q", style)
+		return LocalizedErrorf("알 수 없는 명령 스타일입니다: %q", "unknown style %q", style)
 	}
 	c, err := LoadConfig()
 	if err != nil {
@@ -106,9 +109,21 @@ func SaveSelfUpdate(enabled bool) error {
 	return saveConfig(c)
 }
 
+func SaveLanguage(language string) error {
+	if !ValidLanguage(language) {
+		return LocalizedErrorf("지원하지 않는 언어입니다: %q (ko, en)", "unsupported language %q (ko, en)", language)
+	}
+	c, err := LoadConfig()
+	if err != nil {
+		return err
+	}
+	c.Language = language
+	return saveConfig(c)
+}
+
 func SaveProgress(mode string) error {
 	if !ValidProgressMode(mode) {
-		return fmt.Errorf("unknown progress mode %q", mode)
+		return LocalizedErrorf("알 수 없는 진행 표시 방식입니다: %q", "unknown progress mode %q", mode)
 	}
 	c, err := LoadConfig()
 	if err != nil {

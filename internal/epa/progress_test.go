@@ -47,7 +47,7 @@ func TestRendererPreservesPromptAndError(t *testing.T) {
 	r.Consume([]byte("n\r\nE: signature verification failed\r\n"))
 	r.Finish(100)
 	s := out.String()
-	for _, part := range []string{"42%", "Replace it? [Y/n] ", "signature verification failed", "exit 100"} {
+	for _, part := range []string{"저장소 정보 읽는 중", "42%", "Replace it? [Y/n] ", "signature verification failed", "종료 코드 100"} {
 		if !strings.Contains(s, part) {
 			t.Errorf("missing %q in %q", part, s)
 		}
