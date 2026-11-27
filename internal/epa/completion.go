@@ -181,12 +181,14 @@ func (b Backend) packageNames(installed bool) []string {
 			args = []string{"pkgnames"}
 		}
 	case "dnf":
-		binary = b.Binary
-		args = []string{"--cacheonly", "repoquery", "--qf=%{name}"}
 		if installed {
-			args = append(args, "--installed")
+			// Query the RPM database directly: DNF can still initialize
+			// repositories or plugins even with --cacheonly --installed.
+			binary = systemBinary("rpm")
+			args = []string{"-qa", "--qf", "%{NAME}\\n"}
 		} else {
-			args = append(args, "--available")
+			binary = b.Binary
+			args = []string{"--cacheonly", "repoquery", "--qf=%{name}", "--available"}
 		}
 	case "pacman":
 		binary = b.Binary
