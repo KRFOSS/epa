@@ -10,6 +10,7 @@ import (
 )
 
 var version = "0.1.0-dev"
+
 const help = "EPA - Everyone's Package Adapter\n\nUsage: epa [--style apt|dnf|pacman] [--progress auto|tty|plain|json|native|quiet] [--dry-run] COMMAND [ARGS]\n\nDefault APT-style commands:\n  update, upgrade, full-upgrade, install, remove, search, show,\n  list, outdated, autoremove, reinstall, clean\n\nEPA commands (independent of style):\n  style list|current|set NAME|reset\n  backend info\n  config get progress | set progress MODE\n  doctor\n  completion bash|zsh\n  --help, --version\n\nUse --dry-run before COMMAND to print the native command without running it.\nOptions are style-specific. Unsupported options and operations fail closed.\n"
 
 func main() {
