@@ -13,6 +13,7 @@ type Plan struct {
 	Args          []string
 	Privileged    bool
 	RefreshBefore bool
+	RefreshArgs   []string
 	Note          string
 }
 
@@ -97,18 +98,16 @@ func (b Backend) Build(o Operation) (Plan, error) {
 	if o.Recursive && b.Name == "apt" {
 		return unsupported(Text("재귀적 제거 동작 방식이 다릅니다.", "recursive removal semantics differ"))
 	}
-	if o.ForceRefresh && b.Name != "pacman" {
-		return unsupported(Text("강제 갱신과 동일하게 동작하는 검증된 명령이 없습니다.", "forced refresh has no verified equivalent"))
-	}
 	if o.RefreshFirst && o.Action == FullUpgrade && b.Name == "apt" {
 		p.RefreshBefore = true
+		p.RefreshArgs = aptRefreshArgs(o.ForceRefresh)
 	}
 
 	switch b.Name {
 	case "apt":
 		switch o.Action {
 		case Refresh:
-			p.Args = []string{"update"}
+			p.Args = aptRefreshArgs(o.ForceRefresh)
 		case Install:
 			p.Args = []string{"install", "--no-remove"}
 		case Remove:
@@ -127,7 +126,7 @@ func (b Backend) Build(o Operation) (Plan, error) {
 			// A non-APT upgrade style does not imply permission for APT dist-upgrade.
 			if o.Style != "apt" {
 				p.Args = []string{"upgrade", "--with-new-pkgs", "--no-remove"}
-				p.Note = Text("패키지 제거를 허용하지 않는 보수적인 APT 업그레이드 방식을 사용합니다.", "Using conservative APT upgrade semantics.")
+				p.Note = Text("패키지를 제거하지 않고 업그레이드합니다.", "Upgrading without removing packages.")
 			} else {
 				p.Args = []string{"dist-upgrade"}
 			}
@@ -284,9 +283,26 @@ func (b Backend) Build(o Operation) (Plan, error) {
 	default:
 		return unsupported(Text("알 수 없는 백엔드입니다.", "unknown backend"))
 	}
+	if o.ForceRefresh && b.Name == "apt" {
+		note := Text("HTTP(S) 캐시를 우회해 저장소를 다시 확인합니다. 변경되지 않은 인덱스는 APT가 재사용할 수 있습니다.", "Rechecking repositories without HTTP(S) proxy cache reuse. APT may reuse unchanged indexes.")
+		if p.Note != "" {
+			p.Note += " "
+		}
+		p.Note += note
+	}
 	if len(o.Packages) > 0 {
 		p.Args = append(p.Args, "--")
 		p.Args = append(p.Args, o.Packages...)
 	}
 	return p, nil
+}
+
+// APT has no pacman -Syy equivalent that unconditionally downloads every
+// index. Revalidate through HTTP(S) without proxy cache reuse, leaving
+// APT's local index management, signature checks and locks intact.
+func aptRefreshArgs(force bool) []string {
+	if force {
+		return []string{"-o", "Acquire::http::No-Cache=true", "-o", "Acquire::https::No-Cache=true", "update"}
+	}
+	return []string{"update"}
 }

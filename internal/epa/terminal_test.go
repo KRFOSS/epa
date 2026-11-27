@@ -18,6 +18,8 @@ func TestPTYDriver(t *testing.T) {
 	switch scenario {
 	case "prompt":
 		script = "printf '\\rReading package lists... 42%%\\r'; sleep 0.2; printf '\\r\\nReplace configuration? [Y/n] '; read answer; printf '\\nAnswer: %s\\n' \"$answer\"; printf 'E: signature verification failed\\n' >&2; exit 100"
+	case "apt-cancel":
+		script = "printf 'Hit:1 https://mirror.example.test stable InRelease\\r\\n\\rReading package lists... Done\\r\\r\\n\\rCalculating upgrade... Done\\r\\r\\n2 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.\\nDo you want to continue? [Y/n] '; read answer; if [ \"$answer\" = n ]; then printf 'Abort.\\n'; exit 1; fi; exit 100"
 	case "success":
 		script = "printf '\\rReading package lists... 42%%\\r'; sleep 0.3; printf '\\rProgress: [ 90%%] [######### ]\\r'; sleep 0.2; exit 0"
 	case "interrupt":
@@ -33,7 +35,7 @@ func TestPTYDriver(t *testing.T) {
 	if err != nil {
 		os.Exit(3)
 	}
-	code, started, err := RunInteractive("/bin/sh", []string{"-c", script}, "apt", false)
+	code, started, err := RunInteractive("/bin/sh", []string{"-c", script}, "apt", "upgrade", false)
 	after, e := terminalState(os.Stdin)
 	if !started || err != nil || e != nil || before != after {
 		fmt.Fprintf(os.Stderr, "PTY setup/restore failed: %t %v %v\n", started, err, e)

@@ -379,7 +379,7 @@ parsed:
 		mode = epa.ProgressPlain
 	}
 	if plan.RefreshBefore {
-		prep, prepArgs, err := invocation(b.Binary, []string{"update"}, true, dry)
+		prep, prepArgs, err := invocation(b.Binary, plan.RefreshArgs, true, dry)
 		if err != nil {
 			return 1, err
 		}
@@ -441,7 +441,7 @@ func performSelfUpdate(automatic, quiet bool) (int, error) {
 
 func runCommand(binary string, args []string, backend, action string, mode epa.ProgressMode, interactive bool) (int, error) {
 	if interactive && (mode == epa.ProgressTTY || mode == epa.ProgressPlain || mode == epa.ProgressQuiet) {
-		code, started, err := epa.RunInteractive(binary, args, backend, mode == epa.ProgressPlain, mode == epa.ProgressQuiet)
+		code, started, err := epa.RunInteractive(binary, args, backend, action, mode == epa.ProgressPlain, mode == epa.ProgressQuiet)
 		if started {
 			return code, err
 		}
