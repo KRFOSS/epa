@@ -11,6 +11,7 @@ jobs:
   go:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         go: ['1.23.x', 'stable']
     steps:
@@ -29,26 +30,38 @@ jobs:
           go test -c -o /tmp/epa-pty.test ./internal/epa
           python3 tests/pty_integration.py /tmp/epa-pty.test
       - run: CGO_ENABLED=0 go build -trimpath -o epa ./cmd/epa
-      - run: |
+      - name: 버전 및 드라이런
+        shell: bash
+        run: |
           ./epa --version
-          ./epa completion bash | bash -n
+          ./epa --style apt --progress native --dry-run install bash -y
+          ./epa --style pacman --progress native --dry-run -Syu
+      - name: 자동완성 테스트 환경 준비
+        shell: bash
+        run: |
+          echo "XDG_CONFIG_HOME=$(mktemp -d)" >> "$GITHUB_ENV"
+          sudo apt-get update
+          sudo apt-get install -y zsh
+          apt-cache pkgnames bas | grep -Fx bash
+      - name: Bash 자동완성
+        shell: bash
+        run: |
+          ./epa completion bash > "$RUNNER_TEMP/epa-completion.bash"
+          bash -n "$RUNNER_TEMP/epa-completion.bash"
           export PATH="$PWD:$PATH"
-          source <(epa completion bash)
+          ./epa __complete -- install bas | grep -Fx bash
+          source "$RUNNER_TEMP/epa-completion.bash"
           COMP_WORDS=(epa install bas)
           COMP_CWORD=2
           _epa_complete
           printf '%s\n' "${COMPREPLY[@]}" | grep -Fx bash
-          ./epa --style apt --dry-run install bash -y
-          ./epa --style pacman --dry-run -Syu
-          ./epa __complete -- install bas | grep -Fx bash
-      - name: Zsh completion syntax
+      - name: Zsh 자동완성
+        shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y zsh
-          ./epa completion zsh > /tmp/epa-completion.zsh
-          zsh -n /tmp/epa-completion.zsh
+          ./epa completion zsh > "$RUNNER_TEMP/epa-completion.zsh"
+          zsh -n "$RUNNER_TEMP/epa-completion.zsh"
           export PATH="$PWD:$PATH"
-          zsh -fc 'compdef() { :; }; compadd() { print -rl -- "${candidates[@]}"; }; source /tmp/epa-completion.zsh; words=(epa install bas); CURRENT=3; _epa_complete' | grep -Fx bash
+          zsh -fc 'compdef() { :; }; compadd() { print -rl -- "${candidates[@]}"; }; source "$RUNNER_TEMP/epa-completion.zsh"; words=(epa install bas); CURRENT=3; _epa_complete' | grep -Fx bash
       - name: Linux cross-builds
         run: |
           for arch in arm64 riscv64; do
