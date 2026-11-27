@@ -1,0 +1,66 @@
+name: Linux 배포
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+      - name: 릴리스 버전 및 배포 브랜치 확인
+        run: |
+          version=v0.0.0
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            version=$GITHUB_REF_NAME
+            git merge-base --is-ancestor HEAD refs/remotes/origin/main
+          fi
+          printf 'EPA_VERSION=%s\n' "$version" >> "$GITHUB_ENV"
+      - name: Go 검증
+        run: |
+          go test ./...
+          go vet ./...
+      - name: 다중 아키텍처 빌드 및 설치 검증
+        run: |
+          bash tests/build_release.sh "$EPA_VERSION" dist
+          bash tests/install_smoke.sh dist "${EPA_VERSION#v}"
+          (cd dist && sha256sum -c SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: epa-linux-release
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'push' && github.ref_type == 'tag' && github.repository == 'KRFOSS/epa'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: epa-linux-release
+          path: dist
+      - name: GitHub 릴리스 게시
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          (cd dist && sha256sum -c SHA256SUMS)
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "EPA $GITHUB_REF_NAME" \
+            --notes 'Linux용 사전 빌드 바이너리와 SHA-256 체크섬을 제공합니다. 설치 방법과 백엔드 지원 범위는 README를 참고하세요.' \
+            dist/epa-linux-* dist/install.sh dist/SHA256SUMS
