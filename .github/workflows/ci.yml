@@ -1,4 +1,4 @@
-name: CI
+name: 코드 및 배포판 검증
 
 on:
   push:
@@ -9,33 +9,42 @@ permissions:
 
 jobs:
   go:
+    name: Go ${{ matrix.go }} 코드 검증
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         go: ['1.23.x', 'stable']
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: 소스 코드 가져오기
+        uses: actions/checkout@v4
+      - name: Go 개발 환경 준비
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go }}
           cache: false
-      - run: test -z "$(gofmt -l cmd internal)"
-      - run: go test ./...
-      - run: go vet ./...
-      - run: go test -race ./...
-      - run: go test ./internal/epa -run '^$' -fuzz '^FuzzParseProgress$' -fuzztime 10s -parallel 2
-      - name: Interactive PTY integration
+      - name: Go 코드 서식 확인
+        run: test -z "$(gofmt -l cmd internal)"
+      - name: 전체 테스트
+        run: go test ./...
+      - name: 정적 분석
+        run: go vet ./...
+      - name: 동시성 경쟁 상태 검사
+        run: go test -race ./...
+      - name: 진행 상황 파서 퍼징 검사
+        run: go test ./internal/epa -run '^$' -fuzz '^FuzzParseProgress$' -fuzztime 10s -parallel 2
+      - name: 대화형 가상 터미널 통합 검사
         run: |
           go test -c -o /tmp/epa-pty.test ./internal/epa
           python3 tests/pty_integration.py /tmp/epa-pty.test
-      - name: Root self-update safety in disposable container
+      - name: 격리 컨테이너에서 관리자 자체 업데이트 안전성 검사
         if: matrix.go == 'stable'
         run: |
           CGO_ENABLED=0 go test -c -o /tmp/epa-root-update.test ./internal/epa
           docker run --rm --network none -e EPA_TEST_ROOT_INSTALL=1 --mount type=bind,source=/tmp/epa-root-update.test,target=/epa-test,readonly debian:12 \
             sh -ec 'install -m 0755 /epa-test /usr/local/bin/epa; /usr/local/bin/epa -test.v -test.run "^(TestRootDefaultInstall|TestRootAccountPaths|TestSystemUpdateTarget|TestUpdateFromRelease)$"'
-      - run: CGO_ENABLED=0 go build -trimpath -o epa ./cmd/epa
+      - name: EPA 실행 파일 빌드
+        run: CGO_ENABLED=0 go build -trimpath -o epa ./cmd/epa
       - name: 버전 및 드라이런
         shell: bash
         run: |
@@ -71,13 +80,14 @@ jobs:
       - name: 셸 자동완성 영구 등록 및 재접속
         shell: bash
         run: bash tests/completion_install_smoke.sh ./epa
-      - name: Linux cross-builds
+      - name: Linux 교차 아키텍처 빌드
         run: |
           for arch in arm64 riscv64; do
             CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -o "/tmp/epa-$arch" ./cmd/epa
           done
 
   native:
+    name: ${{ matrix.image }} (${{ matrix.backend }}) 실제 동작 검증
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -92,13 +102,16 @@ jobs:
           - {image: 'alpine:3.24', backend: apk}
           - {image: 'gentoo/stage3:latest', backend: portage}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: 소스 코드 가져오기
+        uses: actions/checkout@v4
+      - name: Go 개발 환경 준비
+        uses: actions/setup-go@v5
         with:
           go-version: stable
           cache: false
-      - run: CGO_ENABLED=0 go build -trimpath -o epa ./cmd/epa
-      - name: Native transaction smoke test in a disposable container
+      - name: EPA 실행 파일 빌드
+        run: CGO_ENABLED=0 go build -trimpath -o epa ./cmd/epa
+      - name: 격리 컨테이너에서 실제 패키지 작업 검사
         env:
           IMAGE: ${{ matrix.image }}
           BACKEND: ${{ matrix.backend }}
