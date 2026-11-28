@@ -8,45 +8,13 @@ EPA는 ROKFOSS가 Go로 개발하는 실험적 리눅스 패키지 관리자 어
 
 ## 설치 · 업데이트
 
-서명된 정식 릴리스부터 아래 설치 절차를 지원합니다. OpenSSL 3.x, `curl`, `sha256sum`이 필요합니다. **먼저 GitHub 릴리스와 독립적으로 신뢰할 수 있는 ROKFOSS 경로에서 공식 Ed25519 DER 공개키와 SHA-256 지문을 확인하세요.** 같은 릴리스에서 내려받은 키를 그대로 신뢰하거나, 서명되지 않은 기존 설치기를 대신 실행하지 마세요.
+**한 줄 설치:** [ROKFOSS 공식 설치 페이지](https://krfoss.org/epa/)에서 명령을 복사해 터미널에 붙여 넣으세요. 버전이나 공개키를 직접 입력할 필요가 없습니다. 첫 서명 릴리스와 설치 페이지가 함께 준비된 뒤 사용할 수 있으며, `curl`, `sha256sum`, OpenSSL 3.x가 필요합니다.
 
-아래의 `tag`는 설치할 정식 버전으로, `key`는 지문을 확인한 공개키 파일의 절대 경로로 바꿔 실행하세요. 설치 스크립트도 검증하기 전에는 실행하지 않습니다.
-
-```sh
-(
-    set -eu
-    export LC_ALL=C
-    umask 077
-    tag='vX.Y.Z'
-    key='/절대/경로/epa-release.der'
-    case "$tag" in *[!v0-9.]*) exit 1 ;; esac
-    printf '%s\n' "$tag" | grep -Exq 'v(0|[1-9][0-9]{0,9})\.(0|[1-9][0-9]{0,9})\.(0|[1-9][0-9]{0,9})'
-    case "$key" in /*) ;; *) exit 1 ;; esac
-    dir=$(mktemp -d)
-    trap 'rm -rf -- "$dir"' EXIT
-    cd "$dir"
-    for file in SHA256SUMS.sig SHA256SUMS install.sh; do
-        curl -qfsSL --proto '=https' --proto-redir '=https' --max-time 60 --max-filesize 1048576 \
-            -o "$file" "https://github.com/KRFOSS/epa/releases/download/$tag/$file"
-        test "$(wc -c < "$file")" -le 1048576
-    done
-    test "$(wc -c < "$key")" -eq 44
-    test "$(od -An -v -tx1 -N12 "$key" | tr -d ' \n')" = 302a300506032b6570032100
-    test "$(wc -c < SHA256SUMS.sig)" -eq 64
-    openssl pkeyutl -verify -pubin -keyform DER -inkey "$key" -rawin -in SHA256SUMS -sigfile SHA256SUMS.sig
-    IFS= read -r header < SHA256SUMS
-    test "$header" = "# KRFOSS/epa release $tag"
-    awk '$2 == "install.sh" { if (NF != 2) exit 1; print $1 "  install.sh"; n++ } END { if (n != 1) exit 1 }' SHA256SUMS > installer.sha256
-    sha256sum -c installer.sha256
-    sh ./install.sh "$tag" "$key"
-)
-```
-
-설치기는 아키텍처를 자동 감지하고, 같은 공개키로 서명된 목록과 실제 바이너리의 SHA-256을 확인합니다. 기본 경로 밖의 설치를 갱신할 때도 같은 절차를 사용합니다. 자동으로 `sudo`를 호출하지 않습니다. 일반 사용자는 `~/.local/bin/epa`, root는 `/usr/local/bin/epa`에 설치합니다. 다른 위치는 환경 변수 `EPA_BIN_DIR`에 절대 경로를 지정하세요. 설치 위치가 `PATH`에 없다면 경로를 추가하거나 `~/.local/bin/epa --version`처럼 절대 경로로 실행하세요.
+설치기는 아키텍처를 자동 감지하고, 공식 공개키로 릴리스 서명을 검증하고 설치기와 바이너리의 SHA-256을 확인합니다. 기본 경로 밖의 설치를 갱신할 때도 같은 절차를 사용합니다. 자동으로 `sudo`를 호출하지 않습니다. 일반 사용자는 `~/.local/bin/epa`, root는 `/usr/local/bin/epa`에 설치합니다. 다른 위치는 환경 변수 `EPA_BIN_DIR`에 절대 경로를 지정하세요. 설치 위치가 `PATH`에 없다면 경로를 추가하거나 `~/.local/bin/epa --version`처럼 절대 경로로 실행하세요.
 
 - **배포 대상:** x86-64, x86 32비트, ARMv5/v6/v7, ARM64, RISC-V 64비트, LoongArch 64비트, MIPS 32/64비트(양쪽 바이트 순서), PowerPC 64비트(양쪽 바이트 순서), IBM Z (`s390x`). Go가 지원하지 않는 CPU·커널 조합은 포함하지 않습니다. PowerPC는 POWER8 이상을 대상으로 합니다.
 - **패키지 관리자:** 바이너리 설치 가능 여부와는 별개로, 패키지 조작은 APT·DNF/DNF5·Pacman·APK·Portage가 있는 지원 배포판에서만 가능합니다.
-- **수동 설치:** [GitHub 릴리스](https://github.com/KRFOSS/epa/releases)에서 자신의 아키텍처에 맞는 `epa-linux-*`, `SHA256SUMS`, `SHA256SUMS.sig`를 받으세요. 위와 같이 서명과 버전을 확인하고, 서명된 목록에서 해당 바이너리의 SHA-256을 검증한 다음 설치하세요.
+- **수동 검증:** 키와 버전을 직접 고정해야 한다면 [수동 서명 검증 및 설치](docs/manual-install.md)를 참고하세요.
 
 ### 자체 업데이트
 
@@ -154,7 +122,7 @@ epa completion install fish  # Fish만 등록
 
 Bash는 `~/.bashrc`와 실제 로그인 시작 파일(`~/.bash_profile`, `~/.bash_login`, `~/.profile` 중 우선순위가 가장 높은 파일)을 사용합니다. Zsh는 `~/.zshrc` 또는 환경 변수로 내보낸 `ZDOTDIR`의 `.zshrc`를 사용합니다. Bash·Zsh 로더는 `~/.local/share/epa/completion/`에 설치됩니다. Fish는 `$XDG_CONFIG_HOME/fish/completions/epa.fish`(기본값: `~/.config/fish/completions/epa.fish`)를 자동으로 읽습니다. 기존에 등록된 자동완성은 그대로 유지합니다. Zsh에서 초기화가 필요하면 `compinit -i`로 안전하지 않은 자동완성 경로를 제외합니다. 또한 공유 쓰기 권한이 있거나 심볼릭 링크·하드 링크인 설정 파일은 안전을 위해 자동 수정하지 않습니다. 자동완성 등록에 실패해도 검증된 EPA 바이너리 설치는 유지됩니다.
 
-`sudo`로 설치할 때는 다른 계정의 시작 파일을 변경하지 않습니다. EPA를 사용할 계정에서 `epa completion install`을 실행하세요. 자동 등록을 원하지 않으면 위 검증된 설치 절차의 마지막 줄을 `EPA_INSTALL_COMPLETION=0 sh ./install.sh "$tag" "$key"`로 바꾸세요.
+`sudo`로 설치할 때는 다른 계정의 시작 파일을 변경하지 않습니다. EPA를 사용할 계정에서 `epa completion install`을 실행하세요. 자동 등록을 원하지 않으면 복사한 한 줄 앞에 `env EPA_INSTALL_COMPLETION=0`을 붙이세요.
 
 Bash·Zsh 영구 등록을 제거하려면 해당 시작 파일의 `# >>> EPA shell completion >>>`부터 `# <<< EPA shell completion <<<`까지의 블록만 삭제하세요. Fish에서는 EPA가 설치한 `fish/completions/epa.fish`만 삭제하세요. 기존 설정 파일 전체를 삭제하지 마세요.
 

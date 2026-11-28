@@ -15,7 +15,15 @@ cat > "$work/shims/curl" <<'SH'
 #!/bin/sh
 while [ "$1" != --output ] && [ "$1" != -o ]; do shift; done
 name=${3##*/}
-case "$3" in "https://github.com/KRFOSS/epa/releases/download/$TEST_TAG/"*) ;; *) exit 50 ;; esac
+case "$3" in
+    "https://krfoss.org/epa/bootstrap-$TEST_TAG.sh")
+        printf '%s\n' bootstrap >> "$FETCH_LOG"
+        cp "$INSTALL_PAGE/$name" "$2" || exit 52
+        if [ "${FETCH_MODE:-}" = corrupt-bootstrap ]; then printf '\n# 변조\n' >> "$2"; fi
+        exit 0 ;;
+    "https://github.com/KRFOSS/epa/releases/download/$TEST_TAG/"*) ;;
+    *) exit 50 ;;
+esac
 case "$name" in SHA256SUMS|SHA256SUMS.sig|install.sh|"epa-linux-$EXPECT_ARCH") ;; *) exit 51 ;; esac
 printf '%s\n' "$name" >> "$FETCH_LOG"
 case "${FETCH_MODE:-}:$name" in
@@ -103,12 +111,35 @@ check_blocked sh "$ASSETS/install.sh" "$tag" "$work/foreign.der"
 check_blocked sh "$ASSETS/install.sh"
 check_blocked env TEST_TAG=v999.1.0 sh "$ASSETS/install.sh" v999.1.0 "$key"
 
-# README의 첫 설치 명령도 검증하고, 바꿔치기된 설치기는 실행하지 않습니다.
-awk '/^```sh$/ { if (copy) exit; copy=1; next } /^```$/ && copy { exit } copy { print }' README.md |
+# 수동 설치 문서의 명령도 검증합니다.
+awk '/^```sh$/ { if (copy) exit; copy=1; next } /^```$/ && copy { exit } copy { print }' docs/manual-install.md |
     sed -e "s|^    tag=.*|    tag='$tag'|" -e "s|^    key=.*|    key='$key'|" > "$work/bootstrap.sh"
 sh "$work/bootstrap.sh" > "$work/log"
 grep -q 'EPA 설치 완료' "$work/log"
 check_blocked env FETCH_MODE=corrupt-installer sh "$work/bootstrap.sh"
+
+# 공식 페이지에서 복사할 한 줄을 그대로 실행합니다.
+export INSTALL_PAGE="$work/page"
+source_sha=${4:?expected source SHA required}
+EPA_RELEASE_PUBLIC_KEY=$(base64 -w0 "$key") bash tools/prepare-install-page.sh "$tag" "$source_sha" "$ASSETS" "$INSTALL_PAGE"
+[[ $(wc -l < "$INSTALL_PAGE/install.txt") -eq 1 ]]
+: > "$FETCH_LOG"
+EPA_INSTALL_COMPLETION=0 sh "$INSTALL_PAGE/install.txt" > "$work/log"
+grep -q 'EPA 설치 완료' "$work/log"
+grep -Fx bootstrap "$FETCH_LOG"
+grep -Fx install.sh "$FETCH_LOG"
+[[ $("$EPA_BIN_DIR/epa" --version) == "epa $version" ]]
+check_blocked env FETCH_MODE=corrupt-bootstrap sh "$INSTALL_PAGE/install.txt"
+[[ $(cat "$FETCH_LOG") == bootstrap ]]
+for mode in missing-signature corrupt-manifest; do
+    check_blocked env FETCH_MODE="$mode" sh "$INSTALL_PAGE/install.txt"
+    if grep -Fxq install.sh "$FETCH_LOG"; then
+        echo '릴리스 검증 실패 후 설치기를 내려받았습니다.' >&2
+        exit 1
+    fi
+done
+check_blocked env FETCH_MODE=corrupt-installer sh "$INSTALL_PAGE/install.txt"
+grep -q '설치기 SHA-256' "$work/log"
 if TEST_MACHINE=sparc64 sh "$ASSETS/install.sh" "$tag" "$key" > "$work/log" 2>&1; then exit 1; fi
 grep -q '지원하지 않는 아키텍처' "$work/log"
 if TEST_OS=Darwin sh "$ASSETS/install.sh" "$tag" "$key" > "$work/log" 2>&1; then exit 1; fi
