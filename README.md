@@ -8,21 +8,49 @@ EPA는 ROKFOSS가 Go로 개발하는 실험적 리눅스 패키지 관리자 어
 
 ## 설치 · 업데이트
 
-Go나 소스 빌드 없이 최신 정식 릴리스의 Linux 바이너리를 설치합니다. 터미널에서 다음 한 줄을 실행하세요.
+서명된 정식 릴리스부터 아래 설치 절차를 지원합니다. OpenSSL 3.x, `curl`, `sha256sum`이 필요합니다. **먼저 GitHub 릴리스와 독립적으로 신뢰할 수 있는 ROKFOSS 경로에서 공식 Ed25519 DER 공개키와 SHA-256 지문을 확인하세요.** 같은 릴리스에서 내려받은 키를 그대로 신뢰하거나, 서명되지 않은 기존 설치기를 대신 실행하지 마세요.
+
+아래의 `tag`는 설치할 정식 버전으로, `key`는 지문을 확인한 공개키 파일의 절대 경로로 바꿔 실행하세요. 설치 스크립트도 검증하기 전에는 실행하지 않습니다.
 
 ```sh
-( p=$(mktemp) && trap 'rm -f -- "$p"' EXIT && curl -qfsSL --proto '=https' --proto-redir '=https' -o "$p" https://github.com/KRFOSS/epa/releases/latest/download/install.sh && sh "$p" )
+(
+    set -eu
+    export LC_ALL=C
+    umask 077
+    tag='vX.Y.Z'
+    key='/절대/경로/epa-release.der'
+    case "$tag" in *[!v0-9.]*) exit 1 ;; esac
+    printf '%s\n' "$tag" | grep -Exq 'v(0|[1-9][0-9]{0,9})\.(0|[1-9][0-9]{0,9})\.(0|[1-9][0-9]{0,9})'
+    case "$key" in /*) ;; *) exit 1 ;; esac
+    dir=$(mktemp -d)
+    trap 'rm -rf -- "$dir"' EXIT
+    cd "$dir"
+    for file in SHA256SUMS.sig SHA256SUMS install.sh; do
+        curl -qfsSL --proto '=https' --proto-redir '=https' --max-time 60 --max-filesize 1048576 \
+            -o "$file" "https://github.com/KRFOSS/epa/releases/download/$tag/$file"
+        test "$(wc -c < "$file")" -le 1048576
+    done
+    test "$(wc -c < "$key")" -eq 44
+    test "$(od -An -v -tx1 -N12 "$key" | tr -d ' \n')" = 302a300506032b6570032100
+    test "$(wc -c < SHA256SUMS.sig)" -eq 64
+    openssl pkeyutl -verify -pubin -keyform DER -inkey "$key" -rawin -in SHA256SUMS -sigfile SHA256SUMS.sig
+    IFS= read -r header < SHA256SUMS
+    test "$header" = "# KRFOSS/epa release $tag"
+    awk '$2 == "install.sh" { if (NF != 2) exit 1; print $1 "  install.sh"; n++ } END { if (n != 1) exit 1 }' SHA256SUMS > installer.sha256
+    sha256sum -c installer.sha256
+    sh ./install.sh "$tag" "$key"
+)
 ```
 
-설치기는 아키텍처를 자동으로 감지하고 GitHub 릴리스의 SHA-256 목록과 바이너리를 비교한 뒤 `epa`를 설치합니다. 자체 업데이트를 지원하지 않는 기존 버전 또는 기본 경로 밖의 설치를 갱신할 때는 같은 명령을 사용합니다. 자동으로 `sudo`를 호출하지 않습니다. 일반 사용자는 `~/.local/bin/epa`, root는 `/usr/local/bin/epa`에 설치합니다. 다른 위치는 환경 변수 `EPA_BIN_DIR`에 절대 경로를 지정하세요. 설치 위치가 `PATH`에 없다면 경로를 추가하거나 `~/.local/bin/epa --version`처럼 절대 경로로 실행하세요.
+설치기는 아키텍처를 자동 감지하고, 같은 공개키로 서명된 목록과 실제 바이너리의 SHA-256을 확인합니다. 기본 경로 밖의 설치를 갱신할 때도 같은 절차를 사용합니다. 자동으로 `sudo`를 호출하지 않습니다. 일반 사용자는 `~/.local/bin/epa`, root는 `/usr/local/bin/epa`에 설치합니다. 다른 위치는 환경 변수 `EPA_BIN_DIR`에 절대 경로를 지정하세요. 설치 위치가 `PATH`에 없다면 경로를 추가하거나 `~/.local/bin/epa --version`처럼 절대 경로로 실행하세요.
 
 - **배포 대상:** x86-64, x86 32비트, ARMv5/v6/v7, ARM64, RISC-V 64비트, LoongArch 64비트, MIPS 32/64비트(양쪽 바이트 순서), PowerPC 64비트(양쪽 바이트 순서), IBM Z (`s390x`). Go가 지원하지 않는 CPU·커널 조합은 포함하지 않습니다. PowerPC는 POWER8 이상을 대상으로 합니다.
 - **패키지 관리자:** 바이너리 설치 가능 여부와는 별개로, 패키지 조작은 APT·DNF/DNF5·Pacman·APK·Portage가 있는 지원 배포판에서만 가능합니다.
-- **수동 설치:** [GitHub 릴리스](https://github.com/KRFOSS/epa/releases)에서 자신의 아키텍처에 맞는 `epa-linux-*` 파일과 `SHA256SUMS`를 내려받아 검증한 뒤, 원하는 경로에 `epa`로 설치할 수도 있습니다. 체크섬은 다운로드 손상을 탐지하며 별도 릴리스 서명을 대신하지는 않습니다.
+- **수동 설치:** [GitHub 릴리스](https://github.com/KRFOSS/epa/releases)에서 자신의 아키텍처에 맞는 `epa-linux-*`, `SHA256SUMS`, `SHA256SUMS.sig`를 받으세요. 위와 같이 서명과 버전을 확인하고, 서명된 목록에서 해당 바이너리의 SHA-256을 검증한 다음 설치하세요.
 
 ### 자체 업데이트
 
-일반 사용자 계정의 기본 경로(`~/.local/bin/epa`) 또는 root 계정의 기본 경로(`/usr/local/bin/epa`)에 안전하게 설치한 정식 릴리스는 대화형 패키지 업그레이드(upgrade·full-upgrade)가 성공한 뒤 EPA의 새 정식 릴리스도 자동으로 확인합니다. 저장소 정보만 갱신하는 명령은 EPA의 새 릴리스를 조회하거나 자체 업데이트하지 않습니다. 최신 버전이 현재 버전보다 높을 때만 해당 버전에 고정된 SHA-256 목록과 현재 실행 파일의 아키텍처에 맞는 바이너리를 내려받습니다. 검증과 동기화를 마친 임시 파일을 같은 디렉터리에서 원자적으로 교체하므로 새 버전은 다음 실행부터 적용됩니다.
+일반 사용자 계정의 기본 경로(`~/.local/bin/epa`) 또는 root 계정의 기본 경로(`/usr/local/bin/epa`)에 안전하게 설치한 정식 릴리스는 대화형 패키지 업그레이드(upgrade·full-upgrade)가 성공한 뒤 EPA의 새 정식 릴리스도 자동으로 확인합니다. 저장소 정보만 갱신하는 명령은 EPA의 새 릴리스를 조회하거나 자체 업데이트하지 않습니다. 최신 버전이 현재 버전보다 높으면 해당 버전의 목록을 빌드에 내장된 공개키로 먼저 검증합니다. 서명·버전 검증을 통과한 경우에만 현재 실행 파일의 아키텍처에 맞는 바이너리를 내려받아 SHA-256을 확인합니다. 검증과 동기화를 마친 임시 파일을 같은 디렉터리에서 원자적으로 교체하므로 새 버전은 다음 실행부터 적용됩니다.
 
 ```sh
 epa update
@@ -37,9 +65,8 @@ epa config get self-update
 
 - 개발 빌드, 드라이런, 비대화형 패키지 작업, JSON 출력, 실패한 패키지 업그레이드와 저장소 정보만 갱신하는 작업에서는 자동 업데이트를 수행하지 않습니다. 명시적인 `epa self-update`는 자동 갱신 설정과 별개입니다.
 - root로 직접 실행하면 `/usr/local/bin/epa`의 자체 업데이트도 지원합니다. 해당 경로와 상위 디렉터리는 모두 root 소유이며 다른 계정이 쓸 수 없어야 합니다. `sudo epa`처럼 직접 sudo로 호출한 실행, 권한이 변경된 프로세스, 배포판 패키지 관리 경로(`/usr/bin/epa` 등), 사용자 지정 경로는 자체 교체 대상이 아닙니다. 심볼릭 링크 및 하드 링크로 된 설치 파일도 교체하지 않습니다. 자체 업데이트는 권한 상승을 요청하지 않습니다.
-- GitHub 조회, 다운로드 또는 SHA-256·실행 파일 형식 검증이 실패하면 기존 파일을 보존하고, 성공한 패키지 작업의 종료 상태도 바꾸지 않습니다. 오래된 버전으로 되돌리지 않습니다.
-- 릴리스 체크섬은 전송 손상과 잘못된 파일을 검출하기 위한 것으로 별도의 암호학적 서명이나 GitHub 계정 침해 방지를 대신하지는 않습니다.
-- 자체 업데이트가 없는 v0.1.0 또는 root 자체 업데이트를 지원하지 않는 v0.1.1~v0.1.2에서 처음 전환할 때는 위 설치 명령을 한 번 더 실행해야 합니다.
+- 서명이 없거나 유효하지 않거나, 다운로드·SHA-256·실행 파일 형식 검증이 실패하면 기존 실행 파일을 유지합니다. 자동 자체 갱신 실패는 성공한 시스템 패키지 작업의 종료 상태를 바꾸지 않습니다. 체크섬만 확인하는 대체 경로는 없으며, 오래된 버전으로 되돌리지 않습니다.
+- **서명 검증이 없는 기존 버전에서 전환하거나 서명 키가 바뀔 때는** 위의 검증된 설치 절차를 한 번 실행하세요. 기존 바이너리의 자체 업데이트로 교체하는 것만으로는 최초 공개키의 신뢰를 보장하지 못합니다.
 
 ### 소스 빌드 (개발용)
 
@@ -49,7 +76,7 @@ Linux와 Go 1.23 이상이 필요합니다.
 CGO_ENABLED=0 go build -trimpath -o epa ./cmd/epa
 ```
 
-배포는 `main`에 포함된 커밋에 `vX.Y.Z` 형식의 태그를 푸시하거나 GitHub Actions의 `Linux 배포` 워크플로에서 정식 버전과 검증한 `main` 커밋의 전체 SHA를 지정하여 수동 실행하면 시작됩니다. 수동 배포는 빌드와 설치 검증을 통과한 뒤에만 새 태그를 만들며 기존 태그를 덮어쓰지 않습니다. 업로드가 중단되면 동일한 태그와 커밋으로 초안 릴리스를 재시도할 수 있습니다. 정식 게시를 직렬화하고 이전 버전이 최신 정식 릴리스를 대체하지 못하도록 차단합니다. 모든 바이너리, 설치 스크립트, SHA-256 목록의 업로드를 확인한 뒤 초안 릴리스를 정식 게시합니다.
+관리자용 배포·키 교체 절차는 [릴리스 서명 안내](docs/release-signing.md)를 참고하세요. 태그 푸시는 빌드만 시작하며, GitHub 밖에서 생성한 유효한 서명 없이는 정식 릴리스가 게시되지 않습니다.
 
 ## 사용법
 
@@ -127,11 +154,7 @@ epa completion install fish  # Fish만 등록
 
 Bash는 `~/.bashrc`와 실제 로그인 시작 파일(`~/.bash_profile`, `~/.bash_login`, `~/.profile` 중 우선순위가 가장 높은 파일)을 사용합니다. Zsh는 `~/.zshrc` 또는 환경 변수로 내보낸 `ZDOTDIR`의 `.zshrc`를 사용합니다. Bash·Zsh 로더는 `~/.local/share/epa/completion/`에 설치됩니다. Fish는 `$XDG_CONFIG_HOME/fish/completions/epa.fish`(기본값: `~/.config/fish/completions/epa.fish`)를 자동으로 읽습니다. 기존에 등록된 자동완성은 그대로 유지합니다. Zsh에서 초기화가 필요하면 `compinit -i`로 안전하지 않은 자동완성 경로를 제외합니다. 또한 공유 쓰기 권한이 있거나 심볼릭 링크·하드 링크인 설정 파일은 안전을 위해 자동 수정하지 않습니다. 자동완성 등록에 실패해도 검증된 EPA 바이너리 설치는 유지됩니다.
 
-`sudo`로 설치할 때는 다른 계정의 시작 파일을 변경하지 않습니다. EPA를 사용할 계정에서 `epa completion install`을 실행하세요. 자동 등록을 원하지 않으면 설치 명령의 `sh`에 `EPA_INSTALL_COMPLETION=0`을 지정할 수 있습니다.
-
-```sh
-curl -fsSL https://github.com/KRFOSS/epa/releases/latest/download/install.sh | EPA_INSTALL_COMPLETION=0 sh
-```
+`sudo`로 설치할 때는 다른 계정의 시작 파일을 변경하지 않습니다. EPA를 사용할 계정에서 `epa completion install`을 실행하세요. 자동 등록을 원하지 않으면 위 검증된 설치 절차의 마지막 줄을 `EPA_INSTALL_COMPLETION=0 sh ./install.sh "$tag" "$key"`로 바꾸세요.
 
 Bash·Zsh 영구 등록을 제거하려면 해당 시작 파일의 `# >>> EPA shell completion >>>`부터 `# <<< EPA shell completion <<<`까지의 블록만 삭제하세요. Fish에서는 EPA가 설치한 `fish/completions/epa.fish`만 삭제하세요. 기존 설정 파일 전체를 삭제하지 마세요.
 

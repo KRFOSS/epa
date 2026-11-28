@@ -3,7 +3,9 @@
 package epa
 
 import (
+	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"debug/elf"
 	"encoding/hex"
@@ -333,19 +335,27 @@ func checksumFor(data []byte, asset string) ([]byte, error) {
 	return result, nil
 }
 
-func (s releaseSource) checksum(ctx context.Context, tag, asset string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	resp, err := s.get(ctx, s.base+"/"+tag+"/SHA256SUMS", "application/octet-stream")
+func (s releaseSource) releaseMetadata(ctx context.Context, tag, name string, limit int64) ([]byte, error) {
+	resp, err := s.get(ctx, s.base+"/"+tag+"/"+name, "application/octet-stream")
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	data, err := readBounded(resp.Body, maxReleaseMetadata)
+	return readBounded(resp.Body, limit)
+}
+
+func (s releaseSource) verifiedChecksum(ctx context.Context, tag, asset string, key ed25519.PublicKey) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	sig, err := s.releaseMetadata(ctx, tag, "SHA256SUMS.sig", ed25519.SignatureSize)
+	if err != nil {
+		return nil, LocalizedErrorf("EPA 릴리스 서명을 가져올 수 없습니다. 기존 EPA는 변경하지 않았습니다: %w", "cannot fetch the EPA release signature; existing EPA was not changed: %w", err)
+	}
+	manifest, err := s.releaseMetadata(ctx, tag, "SHA256SUMS", maxReleaseMetadata)
 	if err != nil {
 		return nil, err
 	}
-	return checksumFor(data, asset)
+	return signedChecksumFor(manifest, sig, key, tag, asset)
 }
 
 func verifyELF(current, candidate string) error {
@@ -373,7 +383,7 @@ type UpdateResult struct {
 
 // updateFrom is also used with a local test server. Production endpoints
 // are fixed, HTTPS-only and pinned to the selected release tag.
-func updateFrom(ctx context.Context, s releaseSource, t updateTarget, version, asset string) (UpdateResult, error) {
+func updateFrom(ctx context.Context, s releaseSource, t updateTarget, version, asset string, key ed25519.PublicKey) (UpdateResult, error) {
 	result := UpdateResult{Version: version}
 	old, err := parseReleaseVersion(version)
 	if err != nil {
@@ -403,7 +413,7 @@ func updateFrom(ctx context.Context, s releaseSource, t updateTarget, version, a
 	if !next.newerThan(old) {
 		return result, nil
 	}
-	expected, err := s.checksum(ctx, tag, asset)
+	expected, err := s.verifiedChecksum(ctx, tag, asset, key)
 	if err != nil {
 		return result, err
 	}
@@ -432,7 +442,7 @@ func updateFrom(ctx context.Context, s releaseSource, t updateTarget, version, a
 	if size == 0 || size > maxReleaseBinary {
 		return result, LocalizedErrorf("릴리스 바이너리 크기가 올바르지 않습니다.", "invalid release binary size")
 	}
-	if !strings.EqualFold(hex.EncodeToString(hash.Sum(nil)), hex.EncodeToString(expected)) {
+	if !bytes.Equal(hash.Sum(nil), expected) {
 		return result, LocalizedErrorf("릴리스 SHA-256 검증에 실패했습니다. 기존 EPA는 변경하지 않았습니다.", "release SHA-256 verification failed; existing EPA was not changed")
 	}
 	if err = verifyELF(t.path, stage.Name()); err != nil {
@@ -474,5 +484,9 @@ func SelfUpdate(ctx context.Context, version string) (UpdateResult, error) {
 	if err != nil {
 		return result, err
 	}
-	return updateFrom(ctx, githubReleaseSource(), target, version, asset)
+	key, err := parseReleasePublicKey(releasePublicKeyDERBase64)
+	if err != nil {
+		return result, err
+	}
+	return updateFrom(ctx, githubReleaseSource(), target, version, asset, key)
 }
