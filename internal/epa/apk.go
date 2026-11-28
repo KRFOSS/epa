@@ -52,12 +52,12 @@ func buildAPK(b Backend, o Operation, unsupported func(string) (Plan, error)) (P
 	case Reinstall:
 		p.Args = []string{"fix", "--reinstall"}
 	case Clean:
-		if o.Style != "apk" {
-			return unsupported(Text("APK cache clean은 오래되거나 불필요한 캐시만 정리합니다. APK 스타일로 직접 실행하십시오.", "APK cache clean removes only obsolete or unnecessary cached files; use APK style explicitly"))
-		}
 		p.Args = []string{"cache", "clean"}
+		if o.Style != "apk" {
+			p.Note = Text("APK의 네이티브 캐시 정리를 수행합니다. 오래되거나 불필요한 캐시 파일만 정리합니다.", "Using native APK cache cleanup, which removes only obsolete or unnecessary cached files.")
+		}
 	case Autoremove:
-		return unsupported(Text("APK는 제거 과정에서 불필요한 의존성을 자동 정리하므로 별도 autoremove를 지원하지 않습니다.", "APK cleans unused dependencies during removals; separate autoremove is unavailable"))
+		return Plan{Skip: true, Note: Text("APK는 패키지 제거 시 불필요한 의존성을 정리합니다. 별도의 자동 제거 명령이 없어 작업을 건너뜁니다. 패키지를 제거하지 않았습니다.", "APK prunes unused dependencies during removal. No separate autoremove command is available; skipping this operation without removing packages.")}, nil
 	default:
 		return unsupported(Text("지원하지 않는 작업입니다.", "unsupported action"))
 	}
@@ -65,7 +65,7 @@ func buildAPK(b Backend, o Operation, unsupported func(string) (Plan, error)) (P
 	case Install, Remove, Reinstall, Upgrade, FullUpgrade:
 		if o.Yes {
 			p.Args = append([]string{"--no-interactive"}, p.Args...)
-		} else if o.Interactive || o.Style != "apk" {
+		} else {
 			p.Args = append([]string{"--interactive"}, p.Args...)
 		}
 	}

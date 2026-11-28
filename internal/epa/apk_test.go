@@ -20,9 +20,12 @@ func TestAPKPlans(t *testing.T) {
 		{"apt", []string{"full-upgrade", "-y"}, []string{"--no-interactive", "upgrade"}, nil, true},
 		{"dnf", []string{"update", "--refresh", "-y"}, []string{"--no-interactive", "upgrade"}, []string{"update"}, true},
 		{"pacman", []string{"-Syyu", "--noconfirm"}, []string{"--no-interactive", "upgrade"}, []string{"--force-refresh", "update"}, true},
-		{"apk", []string{"add", "tree"}, []string{"add", "--", "tree"}, nil, true},
+		{"apk", []string{"add", "tree"}, []string{"--interactive", "add", "--", "tree"}, nil, true},
+		{"apk", []string{"add", "tree", "--no-interactive"}, []string{"--no-interactive", "add", "--", "tree"}, nil, true},
+		{"apt", []string{"clean"}, []string{"cache", "clean"}, nil, true},
+		{"dnf", []string{"clean", "all"}, []string{"cache", "clean"}, nil, true},
 		{"apk", []string{"del", "tree", "--interactive"}, []string{"--interactive", "del", "--", "tree"}, nil, true},
-		{"apk", []string{"fix", "tree", "-r"}, []string{"fix", "--reinstall", "--", "tree"}, nil, true},
+		{"apk", []string{"fix", "tree", "-r"}, []string{"--interactive", "fix", "--reinstall", "--", "tree"}, nil, true},
 		{"apk", []string{"update", "--force-refresh"}, []string{"--force-refresh", "update"}, nil, true},
 		{"apk", []string{"cache", "clean"}, []string{"cache", "clean"}, nil, true},
 		{"apk", []string{"info"}, []string{"info"}, nil, false},
@@ -43,14 +46,28 @@ func TestAPKPlans(t *testing.T) {
 	}
 }
 
+func TestAPKAutoremoveSkip(t *testing.T) {
+	b := Backend{Name: "apk", Binary: "/sbin/apk"}
+	for _, style := range []string{"apt", "dnf"} {
+		for _, args := range [][]string{{"autoremove"}, {"autoremove", "-y"}} {
+			op, err := Parse(style, args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			p, err := b.Build(op)
+			if err != nil || !p.Skip || p.Privileged || p.Binary != "" || len(p.Args) != 0 || p.Note == "" {
+				t.Fatalf("%s %v: %+v, %v", style, args, p, err)
+			}
+		}
+	}
+}
+
 func TestAPKRefusals(t *testing.T) {
 	b := Backend{Name: "apk", Binary: "/sbin/apk"}
 	for _, c := range []struct {
 		style string
 		args  []string
 	}{
-		{"apt", []string{"autoremove"}},
-		{"apt", []string{"clean"}},
 		{"pacman", []string{"-R", "tree"}},
 		{"pacman", []string{"-S", "tree", "--needed"}},
 		{"apk", []string{"upgrade", "tree"}},

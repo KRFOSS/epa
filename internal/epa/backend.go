@@ -16,6 +16,7 @@ type Plan struct {
 	IsolatedRefresh bool
 	RefreshArgs     []string
 	Note            string
+	Skip            bool // no native transaction is required
 }
 
 func systemBinary(name string) string {

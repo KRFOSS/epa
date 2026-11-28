@@ -132,7 +132,8 @@ func TestLocalizedLifecycleKeepsJSON(t *testing.T) {
 	EmitLifecycle(&plain, ProgressPlain, "started", "refresh", 0, 0)
 	EmitLifecycle(&plain, ProgressPlain, "completed", "refresh", 0, time.Second)
 	EmitLifecycle(&plain, ProgressPlain, "failed", "install", 100, time.Second)
-	for _, want := range []string{"저장소 정보 갱신: 시작", "저장소 정보 갱신: 완료", "패키지 설치: 실패 (종료 코드 100"} {
+	EmitLifecycle(&plain, ProgressPlain, "skipped", "autoremove", 0, 0)
+	for _, want := range []string{"저장소 정보 갱신: 시작", "저장소 정보 갱신: 완료", "패키지 설치: 실패 (종료 코드 100", "건너뜀"} {
 		if !strings.Contains(plain.String(), want) {
 			t.Errorf("missing %q in %q", want, plain.String())
 		}
@@ -144,5 +145,10 @@ func TestLocalizedLifecycleKeepsJSON(t *testing.T) {
 	}
 	if v["state"] != "failed" || v["action"] != "install" || v["exit_code"] != float64(100) || v["elapsed_ms"] != float64(1000) {
 		t.Fatalf("changed JSON output: %s", structured.String())
+	}
+	structured.Reset()
+	EmitLifecycle(&structured, ProgressJSON, "skipped", "autoremove", 0, 0)
+	if err := json.Unmarshal(structured.Bytes(), &v); err != nil || v["state"] != "skipped" || v["action"] != "autoremove" || v["exit_code"] != float64(0) {
+		t.Fatalf("invalid skipped event: %s (%v)", structured.String(), err)
 	}
 }

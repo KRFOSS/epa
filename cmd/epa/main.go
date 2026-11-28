@@ -392,10 +392,6 @@ parsed:
 	if b.Name == "pacman" && (op.Action == epa.Search || op.Action == epa.Info || op.Action == epa.Outdated) {
 		plan.Args = epa.PacmanQueryArgs(plan.Args)
 	}
-	native, argv, err := invocation(plan.Binary, plan.Args, plan.Privileged, dry)
-	if err != nil {
-		return 1, err
-	}
 	mode := epa.ProgressMode(progress)
 	interactive := epa.IsTerminal(os.Stdin) && epa.IsTerminal(os.Stdout) && epa.IsTerminal(os.Stderr) && os.Getenv("TERM") != "dumb"
 	if mode == epa.ProgressAuto {
@@ -412,6 +408,16 @@ parsed:
 	}
 	if mode == epa.ProgressTTY && !interactive {
 		mode = epa.ProgressPlain
+	}
+	if plan.Skip {
+		if !dry {
+			epa.EmitLifecycle(os.Stdout, mode, "skipped", string(op.Action), 0, 0)
+		}
+		return 0, nil
+	}
+	native, argv, err := invocation(plan.Binary, plan.Args, plan.Privileged, dry)
+	if err != nil {
+		return 1, err
 	}
 	if plan.RefreshBefore {
 		prep, prepArgs, err := invocation(b.Binary, plan.RefreshArgs, true, dry)

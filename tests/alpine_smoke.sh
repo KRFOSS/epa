@@ -34,8 +34,30 @@ if apk info -e tree >/dev/null; then
     echo 'tree already installed' >&2; exit 1
 fi
 if run install tree --allow-untrusted; then exit 1; fi
-if run autoremove; then exit 1; fi
+# No-op must not mutate the installed database or world.
+db=/lib/apk/db/installed
+test -f "$db" || db=/var/lib/apk/db/installed
+before=$(sha256sum /etc/apk/world "$db")
+run autoremove
+"$bin" --style apt --progress json autoremove | grep -F '"state":"skipped"'
+test "$before" = "$(sha256sum /etc/apk/world "$db")"
+"$bin" --style apk --progress native --dry-run add tree | grep -F '"--interactive"'
+"$bin" --style apk --progress native --dry-run fix tree | grep -F '"--interactive"'
 if "$bin" --style pacman --progress native -R tree; then exit 1; fi
+
+# Declining a native prompt must leave both package state and world unchanged.
+# Both APK versions use the same confirmation string.
+for style in apt apk; do
+    command=install
+    test "$style" != apk || command=add
+    log="$XDG_CONFIG_HOME/decline-$style.log"
+    printf 'n\n' | "$bin" --style "$style" --progress native "$command" tree >"$log" 2>&1 || :
+    # APK may report cancellation as success or failure depending on version.
+    cat "$log"
+    grep -F 'Do you want to continue [Y/n]?' "$log"
+    if apk info -e tree >/dev/null; then exit 1; fi
+    test "$before" = "$(sha256sum /etc/apk/world "$db")"
+done
 
 # Test both command styles against actual world transactions.
 "$bin" --style apt --progress plain install tree -y
@@ -48,6 +70,7 @@ if apk info -e tree >/dev/null; then exit 1; fi
 "$bin" --style apk --progress native add tree --no-interactive
 run remove tree -y
 if apk info -e tree >/dev/null; then exit 1; fi
+run clean
 "$bin" --style apk --progress native cache clean
 run upgrade -y
 printf '%s\n' 'APK refresh, search, info, completion, install, reinstall, remove, and upgrade passed'

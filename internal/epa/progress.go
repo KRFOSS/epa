@@ -598,6 +598,8 @@ func EmitLifecycle(out io.Writer, mode ProgressMode, state, action string, code 
 				label = Text("완료", "completed")
 			} else if state == "failed" {
 				label = Text("실패", "failed")
+			} else if state == "skipped" {
+				label = Text("건너뜀", "skipped")
 			}
 			fmt.Fprintf(out, Text("[EPA] %s: %s (종료 코드 %d, %s)\n", "[EPA] %s: %s (exit %d, %s)\n"), actionLabel(action), label, code, elapsed.Round(100*time.Millisecond))
 		}
