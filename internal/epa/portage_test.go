@@ -80,7 +80,6 @@ func TestPortageRefusals(t *testing.T) {
 		{"emerge", []string{"--sync", "tree"}},
 		{"emerge", []string{"--sync", "--depclean"}},
 		{"pacman", []string{"-R", "tree"}},
-		{"pacman", []string{"-Sc"}},
 	} {
 		o, err := Parse(c.style, c.args)
 		if err == nil {

@@ -38,6 +38,8 @@ run show tree | grep -F tree
 "$bin" __complete -- --style apk add tre | grep -Fx tree
 run list | grep -Fx busybox
 run outdated
+run --dry-run install 'tre?' -y | grep -F '"tree"'
+if run --dry-run install 'epa-no-such-package-917294*'; then exit 1; fi
 run --dry-run install tree | grep -F '"--interactive"'
 run --dry-run install tree -y | grep -F '"--no-interactive"'
 run --dry-run upgrade | grep -F '"upgrade"'

@@ -111,9 +111,6 @@ func (b Backend) Build(o Operation) (Plan, error) {
 	if o.ForceRefresh && b.Name != "apk" && o.Style == "apk" {
 		return unsupported(Text("APK 강제 갱신과 동일한 동작을 보장할 수 없습니다.", "cannot guarantee equivalent APK forced refresh"))
 	}
-	if o.Action == Clean && o.Style == "apk" && b.Name != "apk" {
-		return unsupported(Text("APK 캐시 정리 방식은 다른 백엔드에서 지원하지 않습니다.", "APK cache cleanup semantics are not supported on other backends"))
-	}
 	if o.NoSave && b.Name != "pacman" {
 		return unsupported(Text("요청한 구성 파일 제거 방식을 지원하지 않습니다.", "the requested configuration removal semantics are unavailable"))
 	}
@@ -182,10 +179,10 @@ func (b Backend) Build(o Operation) (Plan, error) {
 		case Reinstall:
 			p.Args = []string{"install", "--reinstall", "--no-remove"}
 		case Clean:
-			if o.Style != "apt" {
-				return unsupported(Text("APT의 캐시 정리 동작 방식이 다릅니다.", "APT cache cleanup semantics differ"))
-			}
 			p.Args = []string{"clean"}
+			if o.Style != "apt" {
+				p.Note = Text("APT의 네이티브 패키지 다운로드 캐시를 정리합니다.", "Using native APT downloaded package cache cleanup.")
+			}
 		default:
 			return unsupported(Text("지원하지 않는 작업입니다.", "unsupported action"))
 		}
@@ -231,10 +228,10 @@ func (b Backend) Build(o Operation) (Plan, error) {
 		case Reinstall:
 			p.Args = []string{"reinstall"}
 		case Clean:
-			if o.Style == "pacman" {
-				return unsupported(Text("pacman의 캐시 정리 동작 방식이 다릅니다.", "pacman cache cleanup semantics differ"))
-			}
 			p.Args = []string{"clean", "packages"}
+			if o.Style != "dnf" {
+				p.Note = Text("DNF의 네이티브 다운로드 패키지 캐시를 정리합니다.", "Using native DNF downloaded package cache cleanup.")
+			}
 			if o.Style == "dnf" {
 				p.Args[1] = "all"
 			}
@@ -300,10 +297,10 @@ func (b Backend) Build(o Operation) (Plan, error) {
 		case Outdated:
 			p.Args = []string{"-Qu"}
 		case Clean:
-			if o.Style != "pacman" {
-				return unsupported(Text("pacman의 캐시 정리 동작 방식이 다릅니다.", "pacman cache cleanup semantics differ"))
-			}
 			p.Args = []string{"-Sc"}
+			if o.Style != "pacman" {
+				p.Note = Text("Pacman의 네이티브 캐시 정리를 수행합니다. 설치된 패키지의 캐시는 보존할 수 있으며 사용하지 않는 저장소 DB를 정리합니다.", "Using native Pacman cache cleanup; caches of installed packages may be retained and unused repository databases cleaned.")
+			}
 		case Reinstall:
 			p.Args = []string{"-S"}
 		case Autoremove:

@@ -203,7 +203,7 @@ func Parse(style string, args []string) (Operation, error) {
 	}
 	if op.Action != Search {
 		for _, p := range op.Packages {
-			if !ValidPackage(p) && !ValidPortageTarget(p) {
+			if !ValidPackage(p) && !ValidPortageTarget(p) && !(op.Action == Install && ValidInstallPattern(p)) {
 				return op, LocalizedErrorf("지원하지 않는 패키지 대상입니다: %q. 백엔드의 실제 패키지 이름을 사용하십시오.", "unsupported package target %q; use a native package name", p)
 			}
 		}

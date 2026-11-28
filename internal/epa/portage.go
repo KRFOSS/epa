@@ -124,9 +124,6 @@ func buildPortage(b Backend, o Operation, unsupported func(string) (Plan, error)
 	case Outdated:
 		p.Args = append([]string{"--ask=n", "--pretend", "--autounmask-write=n", "--autounmask-continue=n"}, portageWorldArgs()...)
 	case Clean:
-		if o.Style == "pacman" {
-			return unsupported(Text("Portage와 Pacman의 캐시 정리 방식이 다릅니다.", "Portage and Pacman cache cleanup semantics differ"))
-		}
 		var err error
 		p.Binary, err = b.helper("eclean")
 		if err != nil {

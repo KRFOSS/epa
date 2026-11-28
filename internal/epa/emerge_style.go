@@ -176,7 +176,7 @@ func parseEmerge(args []string) (Operation, error) {
 	}
 	if op.Action != Search {
 		for _, name := range op.Packages {
-			if !ValidPackage(name) && !ValidPortageTarget(name) {
+			if !ValidPackage(name) && !ValidPortageTarget(name) && !(op.Action == Install && ValidInstallPattern(name)) {
 				return fail()
 			}
 		}

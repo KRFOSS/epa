@@ -92,7 +92,9 @@ python3 /epa/tests/gentoo_decline.py "$bin" --style apt --progress native instal
 test -z "$(portageq match / app-misc/epa-smoke-test || :)"
 test -z "$(portageq match / app-misc/epa-smoke-dependency || :)"
 
-"$bin" --style emerge --progress plain --ask=n app-misc/epa-smoke-test
+run --dry-run install 'app-misc/epa-smoke-tes?' -y | grep -F '"app-misc/epa-smoke-test"'
+if run --dry-run install 'app-misc/epa-no-such-package-917294*'; then exit 1; fi
+"$bin" --style emerge --progress plain --ask=n 'app-misc/epa-smoke-tes?'
 test -f /usr/share/epa-smoke-test/marker
 test -f /usr/share/epa-smoke-dependency/marker
 portageq match / app-misc/epa-smoke-test | grep -Fx app-misc/epa-smoke-test-1
