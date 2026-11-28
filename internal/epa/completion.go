@@ -45,6 +45,8 @@ func commandsFor(style string) []string {
 		for cmd := range apkCommands {
 			list = append(list, cmd)
 		}
+	case "emerge":
+		list = append(list, "--sync", "--ask", "--ask=n", "-av", "-avuDN", "--update", "--depclean", "--search", "--info", "--pretend", "--list-installed", "--clean-cache", "--reinstall-targets")
 	case "pacman":
 		list = append(list, "-S", "-Ss", "-Si", "-Sy", "-Syy", "-Su", "-Syu", "-Syyu", "-R", "-Rs", "-Rn", "-Rns", "-Q", "-Qu", "-Sc")
 	}
@@ -93,7 +95,11 @@ func Complete(style string, words []string, backend Backend) []string {
 	}
 parsed:
 	if len(before) == 0 {
-		return matching(commandsFor(style), prefix)
+		candidates := commandsFor(style)
+		if style == "emerge" && prefix != "" && !strings.HasPrefix(prefix, "-") {
+			candidates = append(candidates, backend.packageNames(false, prefix)...)
+		}
+		return matching(candidates, prefix)
 	}
 	if before[0] == "config" {
 		if len(before) == 1 {
@@ -133,6 +139,9 @@ parsed:
 			return matching([]string{"all", "bash", "zsh", "fish"}, prefix)
 		}
 		return nil
+	}
+	if style == "emerge" {
+		return completeEmerge(before, prefix, backend)
 	}
 	cmd := before[0]
 	if style == "apk" {
@@ -251,6 +260,13 @@ func (b Backend) packageNames(installed bool, prefix string) []string {
 			binary = b.Binary
 			args = []string{"--cacheonly", "repoquery", "--qf=%{name}", "--available"}
 		}
+	case "portage":
+		binary = systemBinary("python3")
+		tree := "porttree"
+		if installed {
+			tree = "vartree"
+		}
+		args = []string{"-I", "-c", portageNamesScript, tree, prefix}
 	case "apk":
 		binary = b.Binary
 		if installed {
@@ -285,7 +301,7 @@ func (b Backend) packageNames(installed bool, prefix string) []string {
 			}
 			line = strings.TrimSpace(line[3:])
 		}
-		if ValidPackage(line) {
+		if ValidPackage(line) || (b.Name == "portage" && ValidPortageTarget(line)) {
 			result = append(result, line)
 		}
 	}

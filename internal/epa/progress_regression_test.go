@@ -44,6 +44,8 @@ func FuzzParseProgress(f *testing.F) {
 	f.Add("apt", "Replace it? [Y/n]")
 	f.Add("pacman", "(1/3) upgrading nginx [#####     ] 50%")
 	f.Add("dnf", "Running transaction")
+	f.Add("portage", ">>> Emerging (1 of 2) app-misc/tree-2.1.1::gentoo")
+	f.Add("portage", ">>> Failed app-misc/tree-2.1.1")
 	f.Fuzz(func(t *testing.T, backend, line string) {
 		e, ok := ParseProgress(backend, line)
 		if !ok {

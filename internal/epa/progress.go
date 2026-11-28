@@ -92,6 +92,11 @@ var apkRules = []eventRule{
 	rule(`^\([0-9]+/[0-9]+\) (?:Installing|Upgrading|Downgrading|Reinstalling|Purging) ([A-Za-z0-9.+_:-]+) \([^()\r\n]+\)$`, "Applying transaction", 1, 0),
 }
 
+var portageRules = []eventRule{
+	rule(`^>>> (?:Emerging(?: binary)?|Installing|Unmerging) \([0-9]+ of [0-9]+\) ([A-Za-z0-9.+_:@/-]+)(?:\.\.\.)?$`, "Applying transaction", 1, 0),
+	rule(`^>>> Completed \([0-9]+ of [0-9]+\) ([A-Za-z0-9.+_:@/-]+)$`, "Applying transaction", 1, 0),
+}
+
 // Accept only complete, recognized progress records. In particular, do not
 // interpret a generic number followed by '%' in an error or a prompt.
 func ParseProgress(backend, line string) (ProgressEvent, bool) {
@@ -105,6 +110,8 @@ func ParseProgress(backend, line string) (ProgressEvent, bool) {
 		rules = pacmanRules
 	case "apk":
 		rules = apkRules
+	case "portage":
+		rules = portageRules
 	default:
 		return ProgressEvent{}, false
 	}

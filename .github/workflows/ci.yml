@@ -90,6 +90,7 @@ jobs:
           - {image: 'archlinux:base', backend: pacman}
           - {image: 'alpine:3.22', backend: apk}
           - {image: 'alpine:3.24', backend: apk}
+          - {image: 'gentoo/stage3:latest', backend: portage}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -105,6 +106,11 @@ jobs:
           if [ "$BACKEND" = apk ]; then
             docker run --rm --mount "type=bind,source=$PWD,target=/epa,readonly" \
               "$IMAGE" sh /epa/tests/alpine_smoke.sh /epa/epa
+          elif [ "$BACKEND" = portage ]; then
+            snapshot=$(docker create -v /var/db/repos/gentoo gentoo/portage:latest /bin/true)
+            trap 'docker rm -v "$snapshot" >/dev/null' EXIT
+            docker run --rm --network none --volumes-from "$snapshot" --mount "type=bind,source=$PWD,target=/epa,readonly" \
+              "$IMAGE" bash /epa/tests/gentoo_smoke.sh /epa/epa
           else
             docker run --rm --mount "type=bind,source=$PWD,target=/epa,readonly" \
               "$IMAGE" bash /epa/tests/distro_smoke.sh /epa/epa "$BACKEND"

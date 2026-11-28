@@ -16,7 +16,7 @@ import (
 
 func TestKoreanPhaseLabels(t *testing.T) {
 	phases := map[string]bool{"Running package manager": true}
-	for _, rules := range [][]eventRule{aptRules, dnfRules, pacmanRules, apkRules} {
+	for _, rules := range [][]eventRule{aptRules, dnfRules, pacmanRules, apkRules, portageRules} {
 		for _, rule := range rules {
 			phases[rule.phase] = true
 		}
