@@ -60,7 +60,11 @@ EOF
 done
 printf '%s\n' 'RDEPEND="app-misc/epa-smoke-dependency"' >> "$src/app-misc/epa-smoke-test/epa-smoke-test-1.ebuild"
 run --dry-run update | grep -F '"--sync"'
-run update
+run update 2> "$XDG_CONFIG_HOME/refresh.log"
+cat "$XDG_CONFIG_HOME/refresh.log"
+# The stage3 snapshot may have unsatisfiable @world dependencies.
+# Never turn a failed solver query into an empty upgrade list.
+grep -E '시스템 패키지: @world 갱신 계획 [0-9]+개|시스템 패키지 업데이트 후보를 확인하지 못했습니다' "$XDG_CONFIG_HOME/refresh.log"
 test -f "$repo/app-misc/epa-smoke-test/epa-smoke-test-1.ebuild"
 for pkg in epa-smoke-dependency epa-smoke-test; do
     ebuild "$repo/app-misc/$pkg/$pkg-1.ebuild" manifest

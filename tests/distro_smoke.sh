@@ -24,7 +24,31 @@ if SUDO_USER=operator SUDO_COMMAND="$bin style set dnf" "$bin" style set dnf; th
 fi
 test ! -e "$XDG_CONFIG_HOME/epa/config.json"
 case "$backend" in
- apt|dnf) run update; "$bin" --style pacman --progress native -Syy ;;
+ apt|dnf)
+    if [[ "$backend" == apt ]]; then
+        dpkg-query -W > "$XDG_CONFIG_HOME/native.before"
+    else
+        rpm -qa | sort > "$XDG_CONFIG_HOME/native.before"
+    fi
+    run update 2> "$XDG_CONFIG_HOME/refresh.log"
+    cat "$XDG_CONFIG_HOME/refresh.log"
+    if [[ "$backend" == apt ]]; then
+        apt -o APT::Cmd::Disable-Script-Warning=true -o APT::Color=false list --upgradable > "$XDG_CONFIG_HOME/candidates"
+        count=$(awk '/\[upgradable from: / {print $1, $3}' "$XDG_CONFIG_HOME/candidates" | sort -u | wc -l)
+        dpkg-query -W > "$XDG_CONFIG_HOME/native.after"
+    else
+        dnf -q --cacheonly repoquery --upgrades --queryformat='%{name}.%{arch}' > "$XDG_CONFIG_HOME/candidates"
+        count=$(sort -u "$XDG_CONFIG_HOME/candidates" | sed '/^[[:space:]]*$/d' | wc -l)
+        rpm -qa | sort > "$XDG_CONFIG_HOME/native.after"
+    fi
+    if [[ "$count" == 0 ]]; then
+        grep -F '시스템 패키지: 갱신한 저장소 기준 업그레이드 후보가 없습니다.' "$XDG_CONFIG_HOME/refresh.log"
+    else
+        grep -F "시스템 패키지: 업그레이드 후보 ${count}개." "$XDG_CONFIG_HOME/refresh.log"
+    fi
+    test "$(sha256sum < "$XDG_CONFIG_HOME/native.before")" = "$(sha256sum < "$XDG_CONFIG_HOME/native.after")"
+    "$bin" --style pacman --progress native -Syy
+    ;;
  pacman)
     native_db=$(pacman-conf DBPath)
     native_digest() {
@@ -36,8 +60,21 @@ case "$backend" in
     native_digest > "$XDG_CONFIG_HOME/native.before"
     run --dry-run update | grep -F '/var/cache/epa/pacman'
     test ! -e /var/cache/epa/pacman/.epa-ready
-    run update
+    run update 2> "$XDG_CONFIG_HOME/refresh.log"
+    cat "$XDG_CONFIG_HOME/refresh.log"
     test -f /var/cache/epa/pacman/.epa-ready
+    query_rc=0
+    pacman --dbpath /var/cache/epa/pacman --color never -Quq > "$XDG_CONFIG_HOME/candidates" 2> "$XDG_CONFIG_HOME/query.err" || query_rc=$?
+    test ! -s "$XDG_CONFIG_HOME/query.err"
+    count=$(wc -l < "$XDG_CONFIG_HOME/candidates")
+    if [[ "$count" == 0 ]]; then
+        test "$query_rc" -eq 1 || test "$query_rc" -eq 0
+        grep -F '시스템 패키지: 갱신한 저장소 기준 업그레이드 후보가 없습니다.' "$XDG_CONFIG_HOME/refresh.log"
+    else
+        test "$query_rc" -eq 0
+        grep -F "시스템 패키지: 업그레이드 후보 ${count}개." "$XDG_CONFIG_HOME/refresh.log"
+        grep -F 'epa --style apt list --upgradable' "$XDG_CONFIG_HOME/refresh.log"
+    fi
     native_digest > "$XDG_CONFIG_HOME/native.after"
     test "$(sha256sum < "$XDG_CONFIG_HOME/native.before")" = "$(sha256sum < "$XDG_CONFIG_HOME/native.after")"
     run --dry-run search tree | grep -F '/var/cache/epa/pacman'

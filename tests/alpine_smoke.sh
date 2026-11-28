@@ -18,7 +18,19 @@ apk --version
 "$bin" style current | grep -Fx apt
 
 # A failed or interrupted refresh must not be mistaken for success.
-run update
+db=/lib/apk/db/installed
+test -f "$db" || db=/var/lib/apk/db/installed
+refresh_before=$(sha256sum /etc/apk/world "$db")
+run update 2> "$XDG_CONFIG_HOME/refresh.log"
+cat "$XDG_CONFIG_HOME/refresh.log"
+apk --no-network --no-progress list --upgradable > "$XDG_CONFIG_HOME/candidates"
+count=$(sed -n 's/.*\[upgradable from: \([^]]*\)\].*/\1/p' "$XDG_CONFIG_HOME/candidates" | sort -u | wc -l)
+if [ "$count" -eq 0 ]; then
+    grep -F '시스템 패키지: 갱신한 저장소 기준 업그레이드 후보가 없습니다.' "$XDG_CONFIG_HOME/refresh.log"
+else
+    grep -F "시스템 패키지: 업그레이드 후보 ${count}개." "$XDG_CONFIG_HOME/refresh.log"
+fi
+test "$refresh_before" = "$(sha256sum /etc/apk/world "$db")"
 "$bin" --style pacman --progress native -Syy
 run search tree | grep -F tree
 run show tree | grep -F tree

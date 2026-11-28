@@ -22,20 +22,20 @@ Go나 소스 빌드 없이 최신 정식 릴리스의 Linux 바이너리를 설�
 
 ### 자체 업데이트
 
-일반 사용자 계정의 기본 경로(`~/.local/bin/epa`) 또는 root 계정의 기본 경로(`/usr/local/bin/epa`)에 안전하게 설치한 정식 릴리스는 대화형 패키지 갱신·업그레이드가 성공한 뒤 EPA의 새 정식 릴리스도 자동으로 확인합니다. 최신 버전이 현재 버전보다 높을 때만 해당 버전에 고정된 SHA-256 목록과 현재 실행 파일의 아키텍처에 맞는 바이너리를 내려받습니다. 검증과 동기화를 마친 임시 파일을 같은 디렉터리에서 원자적으로 교체하므로 새 버전은 다음 실행부터 적용됩니다.
+일반 사용자 계정의 기본 경로(`~/.local/bin/epa`) 또는 root 계정의 기본 경로(`/usr/local/bin/epa`)에 안전하게 설치한 정식 릴리스는 대화형 패키지 업그레이드(upgrade·full-upgrade)가 성공한 뒤 EPA의 새 정식 릴리스도 자동으로 확인합니다. 저장소 정보만 갱신하는 명령은 EPA의 새 릴리스를 조회하거나 자체 업데이트하지 않습니다. 최신 버전이 현재 버전보다 높을 때만 해당 버전에 고정된 SHA-256 목록과 현재 실행 파일의 아키텍처에 맞는 바이너리를 내려받습니다. 검증과 동기화를 마친 임시 파일을 같은 디렉터리에서 원자적으로 교체하므로 새 버전은 다음 실행부터 적용됩니다.
 
 ```sh
 epa update
 epa upgrade -y
 epa --style pacman -Syu
 epa self-update                  # EPA만 명시적으로 갱신
-epa --no-self-update update      # 이번 실행에서만 생략
+epa --no-self-update upgrade     # 이번 실행에서만 생략
 epa config set self-update off   # 계정별 자동 갱신 끄기
 epa config set self-update on    # 다시 켜기 (기본값)
 epa config get self-update
 ```
 
-- 개발 빌드, 드라이런, 비대화형 패키지 작업, JSON 출력, 실패한 패키지 갱신에서는 자동 업데이트를 수행하지 않습니다. 명시적인 `epa self-update`는 자동 갱신 설정과 별개입니다.
+- 개발 빌드, 드라이런, 비대화형 패키지 작업, JSON 출력, 실패한 패키지 업그레이드와 저장소 정보만 갱신하는 작업에서는 자동 업데이트를 수행하지 않습니다. 명시적인 `epa self-update`는 자동 갱신 설정과 별개입니다.
 - root로 직접 실행하면 `/usr/local/bin/epa`의 자체 업데이트도 지원합니다. 해당 경로와 상위 디렉터리는 모두 root 소유이며 다른 계정이 쓸 수 없어야 합니다. `sudo epa`처럼 직접 sudo로 호출한 실행, 권한이 변경된 프로세스, 배포판 패키지 관리 경로(`/usr/bin/epa` 등), 사용자 지정 경로는 자체 교체 대상이 아닙니다. 심볼릭 링크 및 하드 링크로 된 설치 파일도 교체하지 않습니다. 자체 업데이트는 권한 상승을 요청하지 않습니다.
 - GitHub 조회, 다운로드 또는 SHA-256·실행 파일 형식 검증이 실패하면 기존 파일을 보존하고, 성공한 패키지 작업의 종료 상태도 바꾸지 않습니다. 오래된 버전으로 되돌리지 않습니다.
 - 릴리스 체크섬은 전송 손상과 잘못된 파일을 검출하기 위한 것으로 별도의 암호학적 서명이나 GitHub 계정 침해 방지를 대신하지는 않습니다.
@@ -168,6 +168,8 @@ epa completion fish | source
 | emerge | `--sync`, `-av PACKAGE`, `-avuDN @world`, `--depclean [PACKAGE]`, `--search PACKAGE`, `--info PACKAGE`, `-puDN @world`, `--list-installed`, `--reinstall-targets PACKAGE`, `--clean-cache` |
 
 백엔드는 APT, DNF(DNF5 포함), Pacman, Alpine Linux의 APK, Gentoo Linux의 Portage를 대상으로 합니다. `os-release`와 고정된 시스템 실행 파일 경로로 백엔드를 감지합니다. Zypper, 구형 YUM은 아직 지원하지 않습니다.
+
+모든 스타일의 저장소 정보 갱신 전용 명령(예: APT update, DNF makecache, Pacman -Sy/-Syy, APK update, emerge --sync)은 성공 후 로컬 메타데이터로 시스템 패키지 업그레이드 후보 수와 목록 조회 명령(epa --style apt list --upgradable)을 표준 오류에 표시합니다. Portage는 기본 옵션을 무시한 읽기 전용 @world 계획의 변경 수(신규 설치·재빌드 포함 가능)를 표시합니다. 후보 조회가 실패하거나 시간 제한에 도달하면 0개라고 표시하지 않고 경고합니다. 저장소 갱신의 원래 종료 코드는 유지하며 EPA 자체 업데이트는 수행하지 않습니다.
 
 EPA는 네이티브 명령 전체를 대체하지 않습니다. 알 수 없는 명령과 옵션은 오류로 처리합니다. 버전 지정자, 파일, URL, 저장소가 붙은 패키지명, 와일드카드, 그룹, 임의의 네이티브 옵션 전달은 초기 범위에 포함되지 않습니다. APT 스타일의 `list`는 기본적으로 설치된 패키지를 조회합니다. 업데이트 후보는 `list --upgradable`로 확인할 수 있습니다. 백엔드의 의존성 해결 정책과 종료 상태는 그대로 적용됩니다. 예를 들어 DNF의 `check-update`는 업데이트가 있을 때 종료 코드 `100`을 반환할 수 있습니다.
 

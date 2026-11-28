@@ -302,7 +302,7 @@ func TestCheckedUpdateTarget(t *testing.T) {
 
 func TestShouldAutoUpdate(t *testing.T) {
 	for _, action := range []Action{Refresh, Upgrade, FullUpgrade, Install, Remove, Search, Outdated} {
-		want := action == Refresh || action == Upgrade || action == FullUpgrade
+		want := action == Upgrade || action == FullUpgrade
 		if ShouldAutoUpdate(action, true, false, false) != want {
 			t.Errorf("incorrect policy for %s", action)
 		}

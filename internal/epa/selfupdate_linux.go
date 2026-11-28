@@ -221,7 +221,7 @@ func SelfUpdateEligible(version string) bool {
 }
 
 func ShouldAutoUpdate(action Action, interactive, disabled, dry bool) bool {
-	return interactive && !disabled && !dry && (action == Refresh || action == Upgrade || action == FullUpgrade)
+	return interactive && !disabled && !dry && (action == Upgrade || action == FullUpgrade)
 }
 
 type releaseSource struct {
