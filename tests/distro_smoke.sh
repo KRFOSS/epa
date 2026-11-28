@@ -118,6 +118,13 @@ else
         exit 1
     fi
 fi
+# Resolve patterns against the native installation database, not the
+# isolated Arch query snapshot. The dry run must contain only exact names.
+run --dry-run install "$package*" -y > "$XDG_CONFIG_HOME/pattern.plan"
+grep -F "\"$package\"" "$XDG_CONFIG_HOME/pattern.plan"
+if grep -F "\"$package*\"" "$XDG_CONFIG_HOME/pattern.plan"; then exit 1; fi
+if run --dry-run install 'epa-no-such-package-917294*'; then exit 1; fi
+if run --dry-run remove "$package*"; then exit 1; fi
 printf 'Testing native %s transaction with %s\n' "$backend" "$package"
 run install "$package" -y
 command -v "$package"
@@ -126,5 +133,12 @@ run remove "$package" -y
 if command -v "$package" >/dev/null; then
     printf '%s is still installed\n' "$package" >&2
     exit 1
+fi
+if [[ "$backend" == pacman ]]; then
+    pacman -Q > "$XDG_CONFIG_HOME/clean.before"
+    run --dry-run clean -y | grep -F '"-Sc"'
+    run clean -y
+    pacman -Q > "$XDG_CONFIG_HOME/clean.after"
+    test "$(sha256sum < "$XDG_CONFIG_HOME/clean.before")" = "$(sha256sum < "$XDG_CONFIG_HOME/clean.after")"
 fi
 printf 'Native %s refresh/upgrade, search, install, completion and remove passed\n' "$backend"
