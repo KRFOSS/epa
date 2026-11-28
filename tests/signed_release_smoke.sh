@@ -45,5 +45,5 @@ if bash tests/verify_release.sh "$version" "$source_sha" "$dist"; then
 fi
 mv -- "$work/install.sh" "$dist/install.sh"
 (cd "$dist" && sha256sum --strict -c SHA256SUMS)
-bash tests/install_smoke.sh "$dist" "${version#v}" "$work/key.der"
+bash tests/install_smoke.sh "$dist" "${version#v}" "$work/key.der" "$source_sha"
 printf '%s\n' '서명된 배포·설치 및 검증 실패 차단 검사 통과'
