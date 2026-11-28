@@ -119,7 +119,7 @@ func (b Backend) installCatalog(ctx context.Context) ([]string, error) {
 		binary = systemBinary("apt-cache")
 		args = []string{"dumpavail"}
 	case "dnf":
-		args = []string{"-q", "--cacheonly", "repoquery", "--available", "--queryformat=%{name}"}
+		args = []string{"-q", "--cacheonly", "repoquery", "--available", "--queryformat=%{name}\n"}
 	case "pacman":
 		args = []string{"-Slq"}
 	case "apk":

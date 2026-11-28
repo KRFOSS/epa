@@ -37,7 +37,7 @@ case "$backend" in
         count=$(awk '/\[upgradable from: / {print $1, $3}' "$XDG_CONFIG_HOME/candidates" | sort -u | wc -l)
         dpkg-query -W > "$XDG_CONFIG_HOME/native.after"
     else
-        dnf -q --cacheonly repoquery --upgrades --queryformat='%{name}.%{arch}' > "$XDG_CONFIG_HOME/candidates"
+        dnf -q --cacheonly repoquery --upgrades --queryformat=$'%{name}.%{arch}\n' > "$XDG_CONFIG_HOME/candidates"
         count=$(sort -u "$XDG_CONFIG_HOME/candidates" | sed '/^[[:space:]]*$/d' | wc -l)
         rpm -qa | sort > "$XDG_CONFIG_HOME/native.after"
     fi

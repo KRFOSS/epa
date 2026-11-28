@@ -28,7 +28,7 @@ func (b Backend) UpgradeCandidates(ctx context.Context) (int, error) {
 		}
 		args = []string{"-o", "APT::Cmd::Disable-Script-Warning=true", "-o", "APT::Color=false", "list", "--upgradable"}
 	case "dnf":
-		args = []string{"-q", "--cacheonly", "repoquery", "--upgrades", "--queryformat=%{name}.%{arch}"}
+		args = []string{"-q", "--cacheonly", "repoquery", "--upgrades", "--queryformat=%{name}.%{arch}\n"}
 	case "apk":
 		args = []string{"--no-network", "--no-progress", "list", "--upgradable"}
 	case "portage":

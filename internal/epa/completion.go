@@ -258,7 +258,7 @@ func (b Backend) packageNames(installed bool, prefix string) []string {
 			args = []string{"-qa", "--qf", "%{NAME}\\n"}
 		} else {
 			binary = b.Binary
-			args = []string{"--cacheonly", "repoquery", "--qf=%{name}", "--available"}
+			args = []string{"-q", "--cacheonly", "repoquery", "--qf=%{name}\n", "--available"}
 		}
 	case "portage":
 		binary = systemBinary("python3")
