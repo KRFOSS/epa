@@ -88,6 +88,10 @@ var dnfRules = []eventRule{
 	rule(`^\[\s*[0-9]+/\s*[0-9]+\]\s+([A-Za-z0-9.+_:@-]+\.rpm)\s+([0-9]{1,3})%\s*\|\s*[0-9.,]+\s*[kKMGT]?i?B/s\s*\|\s*[0-9.,]+\s*[kKMGT]?i?B\s*\|\s*[0-9hms:]+$`, "Downloading packages", 1, 2),
 }
 
+var apkRules = []eventRule{
+	rule(`^\([0-9]+/[0-9]+\) (?:Installing|Upgrading|Downgrading|Reinstalling|Purging) ([A-Za-z0-9.+_:-]+) \([^()\r\n]+\)$`, "Applying transaction", 1, 0),
+}
+
 // Accept only complete, recognized progress records. In particular, do not
 // interpret a generic number followed by '%' in an error or a prompt.
 func ParseProgress(backend, line string) (ProgressEvent, bool) {
@@ -99,6 +103,8 @@ func ParseProgress(backend, line string) (ProgressEvent, bool) {
 		rules = dnfRules
 	case "pacman":
 		rules = pacmanRules
+	case "apk":
+		rules = apkRules
 	default:
 		return ProgressEvent{}, false
 	}
@@ -592,6 +598,8 @@ func EmitLifecycle(out io.Writer, mode ProgressMode, state, action string, code 
 				label = Text("완료", "completed")
 			} else if state == "failed" {
 				label = Text("실패", "failed")
+			} else if state == "skipped" {
+				label = Text("건너뜀", "skipped")
 			}
 			fmt.Fprintf(out, Text("[EPA] %s: %s (종료 코드 %d, %s)\n", "[EPA] %s: %s (exit %d, %s)\n"), actionLabel(action), label, code, elapsed.Round(100*time.Millisecond))
 		}

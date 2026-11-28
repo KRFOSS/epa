@@ -27,9 +27,10 @@ type Operation struct {
 	Action                                                     Action
 	Packages                                                   []string
 	Yes, RefreshFirst, ForceRefresh, Recursive, NoSave, Needed bool
+	Interactive                                                bool
 }
 
-var Styles = []string{"apt", "dnf", "pacman"}
+var Styles = []string{"apt", "dnf", "pacman", "apk"}
 
 func ValidStyle(s string) bool {
 	for _, v := range Styles {
@@ -51,6 +52,11 @@ var dnfCommands = map[string]Action{
 	"update": FullUpgrade, "upgrade": FullUpgrade, "search": Search, "info": Info,
 	"list": List, "check-update": Outdated, "check-upgrade": Outdated,
 	"autoremove": Autoremove, "reinstall": Reinstall, "clean": Clean,
+}
+
+var apkCommands = map[string]Action{
+	"update": Refresh, "add": Install, "del": Remove, "upgrade": FullUpgrade,
+	"search": Search, "info": Info, "list": List, "fix": Reinstall, "cache": Clean,
 }
 
 var packageName = regexp.MustCompile("^[A-Za-z0-9][A-Za-z0-9.+_:-]*$")
@@ -106,6 +112,8 @@ func Parse(style string, args []string) (Operation, error) {
 		commands := aptCommands
 		if style == "dnf" {
 			commands = dnfCommands
+		} else if style == "apk" {
+			commands = apkCommands
 		}
 		var ok bool
 		if op.Action, ok = commands[args[0]]; !ok {
@@ -113,6 +121,13 @@ func Parse(style string, args []string) (Operation, error) {
 		}
 	}
 
+	if style == "apk" && op.Action == Clean {
+		if len(args) < 2 || args[1] != "clean" {
+			return op, LocalizedErrorf("APK 캐시 작업은 cache clean만 지원합니다.", "only apk cache clean is supported")
+		}
+		args = append([]string{args[0]}, args[2:]...)
+	}
+	apkListFilter := false
 	endOptions := false
 	for _, arg := range args[1:] {
 		if arg == "--" && !endOptions {
@@ -125,6 +140,18 @@ func Parse(style string, args []string) (Operation, error) {
 				op.Yes = true
 			case style == "dnf" && (arg == "-y" || arg == "--assumeyes"):
 				op.Yes = true
+			case style == "apk" && arg == "--no-interactive":
+				op.Yes = true
+			case style == "apk" && (arg == "-i" || arg == "--interactive"):
+				op.Interactive = true
+			case style == "apk" && op.Action == Refresh && arg == "--force-refresh":
+				op.ForceRefresh = true
+			case style == "apk" && op.Action == Reinstall && (arg == "-r" || arg == "--reinstall"):
+				// APK fix defaults to reinstall; explicit flag has the same meaning.
+			case style == "apk" && op.Action == List && (arg == "-I" || arg == "--installed") && !apkListFilter:
+				apkListFilter = true
+			case style == "apk" && op.Action == List && (arg == "-u" || arg == "--upgradable" || arg == "--upgradeable") && !apkListFilter:
+				op.Action, apkListFilter = Outdated, true
 			case style == "pacman" && arg == "--noconfirm":
 				op.Yes = true
 			case style == "pacman" && arg == "--needed":
@@ -144,6 +171,18 @@ func Parse(style string, args []string) (Operation, error) {
 			continue
 		}
 		op.Packages = append(op.Packages, arg)
+	}
+	if style == "apk" && args[0] == "info" && len(op.Packages) == 0 {
+		op.Action = List
+	}
+	if style == "apk" && args[0] == "list" && !apkListFilter {
+		return op, LocalizedErrorf("APK list에는 --installed 또는 --upgradable을 지정해야 합니다.", "apk list requires --installed or --upgradable")
+	}
+	if style == "apk" && op.Yes && (op.Action == Refresh || op.Action == Clean) {
+		return op, LocalizedErrorf("이 APK 작업은 확인 옵션을 지원하지 않습니다.", "confirmation options are not supported for this APK action")
+	}
+	if op.Interactive && (op.Yes || (op.Action != Install && op.Action != Remove && op.Action != Reinstall && op.Action != FullUpgrade)) {
+		return op, LocalizedErrorf("이 작업에는 해당 확인 옵션 조합을 사용할 수 없습니다.", "invalid interactive option combination for this operation")
 	}
 	switch op.Action {
 	case Install, Remove, Reinstall, Info, Search:

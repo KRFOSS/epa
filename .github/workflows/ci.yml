@@ -88,6 +88,8 @@ jobs:
           - {image: 'rockylinux/rockylinux:9', backend: dnf}
           - {image: 'fedora:44', backend: dnf}
           - {image: 'archlinux:base', backend: pacman}
+          - {image: 'alpine:3.22', backend: apk}
+          - {image: 'alpine:3.24', backend: apk}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -100,5 +102,10 @@ jobs:
           IMAGE: ${{ matrix.image }}
           BACKEND: ${{ matrix.backend }}
         run: |
-          docker run --rm --mount "type=bind,source=$PWD,target=/epa,readonly" \
-            "$IMAGE" bash /epa/tests/distro_smoke.sh /epa/epa "$BACKEND"
+          if [ "$BACKEND" = apk ]; then
+            docker run --rm --mount "type=bind,source=$PWD,target=/epa,readonly" \
+              "$IMAGE" sh /epa/tests/alpine_smoke.sh /epa/epa
+          else
+            docker run --rm --mount "type=bind,source=$PWD,target=/epa,readonly" \
+              "$IMAGE" bash /epa/tests/distro_smoke.sh /epa/epa "$BACKEND"
+          fi
