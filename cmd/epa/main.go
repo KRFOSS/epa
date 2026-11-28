@@ -16,7 +16,7 @@ var version = "0.1.0-dev"
 
 const helpKO = `EPA - Everyone's Package Adapter
 
-사용법: epa [--language ko|en] [--style apt|dnf|pacman] [--progress auto|tty|plain|json|native|quiet] [--dry-run] [--no-self-update] 명령 [인수]
+사용법: epa [--language ko|en] [--style apt|dnf|pacman|apk] [--progress auto|tty|plain|json|native|quiet] [--dry-run] [--no-self-update] 명령 [인수]
 
 기본 APT 스타일 명령:
   update           저장소 정보 갱신
@@ -31,6 +31,9 @@ const helpKO = `EPA - Everyone's Package Adapter
   autoremove       불필요한 의존 패키지 제거
   reinstall        패키지 재설치
   clean            패키지 캐시 정리
+
+APK 스타일: update, add, del, upgrade, search, info, list --installed,
+  list --upgradable, fix, cache clean
 
 EPA 공통 명령 (명령 스타일과 무관):
   style list|current|set NAME|reset  명령 스타일 조회 및 설정
@@ -60,7 +63,7 @@ EPA 공통 명령 (명령 스타일과 무관):
 
 const helpEN = `EPA - Everyone's Package Adapter
 
-Usage: epa [--language ko|en] [--style apt|dnf|pacman] [--progress auto|tty|plain|json|native|quiet] [--dry-run] [--no-self-update] COMMAND [ARGS]
+Usage: epa [--language ko|en] [--style apt|dnf|pacman|apk] [--progress auto|tty|plain|json|native|quiet] [--dry-run] [--no-self-update] COMMAND [ARGS]
 
 Default APT-style commands:
   update           Refresh repository metadata
@@ -75,6 +78,9 @@ Default APT-style commands:
   autoremove       Remove unnecessary dependencies
   reinstall        Reinstall packages
   clean            Clean package caches
+
+APK style: update, add, del, upgrade, search, info, list --installed,
+  list --upgradable, fix, cache clean
 
 EPA commands (independent of style):
   style list|current|set NAME|reset  Query or set command style
@@ -150,7 +156,7 @@ func run(args []string) (int, error) {
 			args = args[2:]
 		case "--style":
 			if len(args) < 2 || !epa.ValidStyle(args[1]) {
-				return 2, epa.LocalizedErrorf("--style에 apt, dnf 또는 pacman을 지정해야 합니다.", "--style requires apt, dnf or pacman")
+				return 2, epa.LocalizedErrorf("--style에 apt, dnf, pacman 또는 apk를 지정해야 합니다.", "--style requires apt, dnf, pacman or apk")
 			}
 			style = args[1]
 			args = args[2:]
