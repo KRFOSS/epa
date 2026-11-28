@@ -17,7 +17,7 @@ Go나 소스 빌드 없이 최신 정식 릴리스의 Linux 바이너리를 설�
 설치기는 아키텍처를 자동으로 감지하고 GitHub 릴리스의 SHA-256 목록과 바이너리를 비교한 뒤 `epa`를 설치합니다. 자체 업데이트를 지원하지 않는 기존 버전 또는 기본 경로 밖의 설치를 갱신할 때는 같은 명령을 사용합니다. 자동으로 `sudo`를 호출하지 않습니다. 일반 사용자는 `~/.local/bin/epa`, root는 `/usr/local/bin/epa`에 설치합니다. 다른 위치는 환경 변수 `EPA_BIN_DIR`에 절대 경로를 지정하세요. 설치 위치가 `PATH`에 없다면 경로를 추가하거나 `~/.local/bin/epa --version`처럼 절대 경로로 실행하세요.
 
 - **배포 대상:** x86-64, x86 32비트, ARMv5/v6/v7, ARM64, RISC-V 64비트, LoongArch 64비트, MIPS 32/64비트(양쪽 바이트 순서), PowerPC 64비트(양쪽 바이트 순서), IBM Z (`s390x`). Go가 지원하지 않는 CPU·커널 조합은 포함하지 않습니다. PowerPC는 POWER8 이상을 대상으로 합니다.
-- **패키지 관리자:** 바이너리 설치 가능 여부와는 별개로, 패키지 조작은 APT·DNF/DNF5·Pacman이 있는 지원 배포판에서만 가능합니다.
+- **패키지 관리자:** 바이너리 설치 가능 여부와는 별개로, 패키지 조작은 APT·DNF/DNF5·Pacman·APK가 있는 지원 배포판에서만 가능합니다.
 - **수동 설치:** [GitHub 릴리스](https://github.com/KRFOSS/epa/releases)에서 자신의 아키텍처에 맞는 `epa-linux-*` 파일과 `SHA256SUMS`를 내려받아 검증한 뒤, 원하는 경로에 `epa`로 설치할 수도 있습니다. 체크섬은 다운로드 손상을 탐지하며 별도 릴리스 서명을 대신하지는 않습니다.
 
 ### 자체 업데이트
@@ -84,7 +84,7 @@ epa --language en --help      # 이번 실행만 영어
 
 명령과 옵션, 자동완성 값, 설정 조회 값 및 JSON 이벤트 필드는 호환성을 위해 기존 형식을 유지합니다. EPA가 인식하는 일반적인 APT 상태·패키지 변경 요약·확인 질문은 선택한 언어로 표시합니다. 인식하지 못한 출력과 입력 프롬프트는 운영체제 및 백엔드의 로캘 설정에 따릅니다. `sudo epa`는 다른 계정의 설정을 읽지 않으므로 필요하면 `--language`를 명시하세요.
 
-대화형 Linux 터미널에서 패키지를 변경하는 작업은 인라인 진행 화면을 사용합니다. APT, DNF/DNF5, Pacman은 같은 렌더러를 사용합니다. 인식한 백엔드 진행 기록을 스피너와 터미널 폭에 맞춘 진행 막대로 표시합니다. APT 다운로드에서 개별 항목 진행률과 전체 진행률을 모두 확인한 경우 두 수치를 구분합니다. 확인할 수 없는 수치는 추정하지 않으며, 명시적인 완료 기록이나 프로세스 종료 상태에 근거해 성공을 표시합니다.
+대화형 Linux 터미널에서 패키지를 변경하는 작업은 인라인 진행 화면을 사용합니다. APT, DNF/DNF5, Pacman, APK는 같은 렌더러를 사용합니다. 인식한 백엔드 진행 기록을 스피너와 터미널 폭에 맞춘 진행 막대로 표시합니다. APT 다운로드에서 개별 항목 진행률과 전체 진행률을 모두 확인한 경우 두 수치를 구분합니다. 확인할 수 없는 수치는 추정하지 않으며, 명시적인 완료 기록이나 프로세스 종료 상태에 근거해 성공을 표시합니다.
 
 ```sh
 epa upgrade -y
@@ -164,8 +164,9 @@ epa completion fish | source
 | APT | `update`, `upgrade`, `full-upgrade`, `install`, `remove`, `search`, `show`, `list`, `outdated`, `autoremove`, `reinstall`, `clean` |
 | DNF | `makecache`, `update`/`upgrade`, `install`, `remove`/`erase`, `search`, `info`, `list`, `check-update`, `autoremove`, `reinstall`, `clean all` |
 | Pacman | `-S`, `-Ss`, `-Si`, `-Sy`, `-Syy`, `-Su`, `-Syu`, `-Syyu`, `-R`, `-Rs`, `-Rn`, `-Rns`, `-Q`, `-Qu`, `-Sc` |
+| APK | `update`, `add`, `del`, `upgrade`, `search`, `info`, `list --installed`, `list --upgradable`, `fix`, `cache clean` |
 
-백엔드는 APT, DNF(DNF5 포함), Pacman을 대상으로 합니다. `os-release`와 고정된 시스템 실행 파일 경로로 백엔드를 감지합니다. APK, Zypper, 구형 YUM은 아직 지원하지 않습니다.
+백엔드는 APT, DNF(DNF5 포함), Pacman, Alpine Linux의 APK를 대상으로 합니다. `os-release`와 고정된 시스템 실행 파일 경로로 백엔드를 감지합니다. Zypper, 구형 YUM은 아직 지원하지 않습니다.
 
 EPA는 네이티브 명령 전체를 대체하지 않습니다. 알 수 없는 명령과 옵션은 오류로 처리합니다. 버전 지정자, 파일, URL, 저장소가 붙은 패키지명, 와일드카드, 그룹, 임의의 네이티브 옵션 전달은 초기 범위에 포함되지 않습니다. APT 스타일의 `list`는 기본적으로 설치된 패키지를 조회합니다. 업데이트 후보는 `list --upgradable`로 확인할 수 있습니다. 백엔드의 의존성 해결 정책과 종료 상태는 그대로 적용됩니다. 예를 들어 DNF의 `check-update`는 업데이트가 있을 때 종료 코드 `100`을 반환할 수 있습니다.
 
@@ -175,6 +176,8 @@ EPA는 네이티브 명령 전체를 대체하지 않습니다. 알 수 없는 �
 - Pacman 백엔드의 `epa update`와 `-Sy`·`-Syy`는 root 소유의 별도 조회용 DB(`/var/cache/epa/pacman`)를 갱신하며 실제 설치용 DB를 변경하지 않습니다. 성공한 조회 갱신 결과는 검색·정보·업데이트 후보 및 자동완성에 사용합니다. 캐시가 없거나 갱신이 실패하면 네이티브 DB를 사용합니다. 설치·제거 등은 항상 시스템 DB를 사용합니다. `upgrade`, `full-upgrade` 및 `-Su`·`-Syu`는 네이티브 `pacman -Syu`로 시스템 전체를 갱신합니다. 이 과정에서 Pacman의 패키지 교체·제거 정책이 적용될 수 있습니다. 개별 패키지를 설치하기 전에는 Arch 시스템을 최신 상태로 유지하세요.
 - APT 백엔드에서 Pacman 스타일의 `-Syu`는 `apt-get update`가 성공한 뒤 제거를 허용하지 않는 APT 업그레이드를 실행합니다. `dist-upgrade`가 아니며, APT의 `-Syy` 및 `-Syyu`는 HTTP(S)의 No-Cache 옵션으로 저장소를 다시 확인합니다. 변경되지 않은 로컬 인덱스까지 무조건 재다운로드하는 pacman의 강제 갱신과는 다릅니다. DNF에서는 `--refresh`를 사용합니다. Pacman 백엔드에서는 별도의 조회용 DB만 강제 갱신합니다.
 - DNF 백엔드의 APT 스타일 `upgrade`는 `obsoletes`를 끄지만, 설치 전용 패키지 개수 제한 등 DNF의 트랜잭션 규칙은 적용됩니다. APT 스타일로 제거할 때 DNF의 자동 고아 패키지 제거는 끄지만, DNF 정책에 따라 대상에 의존하는 패키지가 함께 제거될 수 있습니다. EPA는 이 차이 때문에 DNF에서 Pacman 스타일 제거를 거부합니다.
+- Alpine에서는 `epa update`가 APK 저장소 인덱스를 갱신하고, `upgrade`와 `full-upgrade`는 네이티브 `apk upgrade`를 실행합니다. `--available`은 자동으로 추가하지 않습니다. APT·DNF·Pacman 스타일의 설치·갱신·재설치는 APK의 명시적 확인 모드를 사용하며 자동 확인 옵션을 지정하면 `--no-interactive`를 전달합니다. APK 스타일(`epa style set apk`)에서는 네이티브 확인 정책을 따르며 `--interactive` 또는 `--no-interactive`로 변경할 수 있습니다.
+- APK의 `del`은 world 제약과 불필요한 의존성을 함께 변경하며 다른 패키지가 요구하는 대상은 남겨둘 수 있습니다. 별도 `autoremove`와 Pacman 스타일 제거는 지원하지 않습니다. `epa --style apk cache clean`은 더 이상 필요한 것이 아닌 캐시 파일만 정리하므로 APT의 `clean`과 동일하게 취급하지 않습니다. APK 스타일의 `fix`는 명시된 패키지만 재설치하며, `info`에 대상이 없으면 설치된 패키지 이름을 조회합니다. 대상 지정 업그레이드, 가상 패키지 제약, 임의 플래그 전달은 지원하지 않습니다.
 - 스타일과 백엔드가 다를 때 의미가 달라지는 대상 지정 업그레이드나 캐시 정리 명령은 거부합니다. 배포판마다 의존성 및 패키지 교체 정책이 다르므로 같은 명령이 동일한 변경을 보장하지는 않습니다.
 - 패키지 이름 매핑, 서명 검증 우회, 임의 플래그 전달 및 셸 평가를 지원하지 않습니다.
 - `--dry-run`은 실행할 명령과 인수를 보여줄 뿐, 의존성을 계산하거나 트랜잭션을 모의 실행하지는 않습니다. 특히 제거와 업그레이드 전에는 백엔드 확인 메시지를 읽으세요. `-y`와 `--noconfirm`은 네이티브 패키지 관리자에 자동 확인을 요청합니다.
@@ -192,8 +195,8 @@ go test ./internal/epa -run '^$' -fuzz '^FuzzParse$' -fuzztime 10s
 go test ./internal/epa -run '^$' -fuzz '^FuzzParseProgress$' -fuzztime 10s
 ```
 
-GitHub Actions에서 셸 자동완성, Linux 크로스 빌드, 배포판별 네이티브 트랜잭션을 검사합니다. 설치·제거를 실행하는 `tests/distro_smoke.sh`는 폐기 가능한 컨테이너에서만 실행하세요. 개발 버전이므로 운영 환경에 도입하기 전에는 대상 배포판과 패키지 관리자 버전에서 직접 검증하세요.
+GitHub Actions에서 셸 자동완성, Linux 크로스 빌드, 배포판별 네이티브 트랜잭션을 검사합니다. 설치·제거를 실행하는 `tests/distro_smoke.sh`와 `tests/alpine_smoke.sh`는 폐기 가능한 컨테이너에서만 실행하세요. Alpine은 APK 2.x와 3.x를 각각 사용하는 Alpine 3.22 및 3.24 이미지를 검사합니다. 개발 버전이므로 운영 환경에 도입하기 전에는 대상 배포판과 패키지 관리자 버전에서 직접 검증하세요.
 
-참고: [APT 매뉴얼](https://manpages.debian.org/bookworm/apt/apt-get.8.en.html), [DNF 명령 참조](https://dnf.readthedocs.io/en/latest/command_ref.html), [Pacman 매뉴얼](https://man.archlinux.org/man/pacman.8), [Arch 시스템 유지보수 정책](https://wiki.archlinux.org/title/System_maintenance#Partial_upgrades_are_unsupported).
+참고: [APT 매뉴얼](https://manpages.debian.org/bookworm/apt/apt-get.8.en.html), [DNF 명령 참조](https://dnf.readthedocs.io/en/latest/command_ref.html), [Pacman 매뉴얼](https://man.archlinux.org/man/pacman.8), [Alpine APK 공식 안내](https://docs.alpinelinux.org/user-handbook/0.1a/Working/apk.html), [Arch 시스템 유지보수 정책](https://wiki.archlinux.org/title/System_maintenance#Partial_upgrades_are_unsupported).
 
 라이선스: GPL-3.0. [LICENSE](LICENSE)를 참고하세요.
