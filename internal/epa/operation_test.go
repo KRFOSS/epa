@@ -129,5 +129,8 @@ func TestCompletion(t *testing.T) {
 func FuzzParse(f *testing.F) {
 	f.Add("apt", "install", "httpd", "-y")
 	f.Add("pacman", "-Syu", "", "--noconfirm")
+	f.Add("emerge", "-avuDN", "@world", "")
+	f.Add("emerge", "--depclean", "app-misc/tree", "--ask=n")
+	f.Add("emerge", "--sync", "--nodeps", "")
 	f.Fuzz(func(t *testing.T, style, a, b, c string) { _, _ = Parse(style, []string{a, b, c}) })
 }
