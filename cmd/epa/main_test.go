@@ -62,3 +62,24 @@ func TestCLILanguageSelection(t *testing.T) {
 	check("출력 언어: ko", "config", "set", "language", "ko")
 	check("사용법: epa")
 }
+
+func TestPacmanUpgradeSummary(t *testing.T) {
+	defer epa.SetLanguage("ko")
+	for _, test := range []struct {
+		lang          string
+		count         int
+		want, missing string
+	}{
+		{"ko", 0, "갱신한 저장소 기준 업그레이드 후보가 없습니다", "list --upgradable"},
+		{"ko", 3, "업그레이드 후보 3개", ""},
+		{"en", 0, "no upgrade candidates", "list --upgradable"},
+		{"en", 3, "3 upgrade candidate(s)", ""},
+	} {
+		epa.SetLanguage(test.lang)
+		got := pacmanUpgradeSummary(test.count)
+		if !strings.Contains(got, test.want) || test.missing != "" && strings.Contains(got, test.missing) ||
+			test.count > 0 && !strings.Contains(got, "epa --style apt list --upgradable") {
+			t.Errorf("%s, %d: unexpected summary %q", test.lang, test.count, got)
+		}
+	}
+}

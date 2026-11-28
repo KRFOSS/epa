@@ -463,7 +463,7 @@ parsed:
 			autoUpdate = c.SelfUpdate
 		}
 	}
-	if mode == epa.ProgressNative && !autoUpdate && isolated == nil {
+	if mode == epa.ProgressNative && !autoUpdate && isolated == nil && op.Action != epa.Refresh {
 		// Native mode keeps original streams, signals and exit status.
 		err = syscall.Exec(native, append([]string{native}, argv...), os.Environ())
 		return 1, err
@@ -473,6 +473,9 @@ parsed:
 		if err := isolated.Finish(runPrivilegedSetup); err != nil {
 			return 1, err
 		}
+	}
+	if code == 0 && err == nil && op.Action == epa.Refresh {
+		reportRefreshSummary(b, isolated)
 	}
 	if code == 0 && err == nil && autoUpdate {
 		// An optional EPA download must never turn a successful package
@@ -485,20 +488,50 @@ parsed:
 	return code, err
 }
 
+// The refresh has already succeeded. A supplementary read-only query must
+// neither turn it into a failed transaction nor pretend a failed query is empty.
+func reportRefreshSummary(b epa.Backend, refresh *epa.PacmanRefresh) {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	defer cancel()
+	var count int
+	var err error
+	if refresh != nil {
+		count, err = refresh.UpgradableCount(ctx)
+	} else {
+		count, err = b.UpgradeCandidates(ctx)
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, epa.Text("EPA: 저장소 정보는 갱신했지만 시스템 패키지 업데이트 후보를 확인하지 못했습니다:", "EPA: repository metadata refreshed, but system package upgrade candidates could not be determined:"), err)
+		return
+	}
+	if b.Name == "portage" {
+		fmt.Fprintln(os.Stderr, fmt.Sprintf(epa.Text("시스템 패키지: @world 갱신 계획 %d개 (설치·재빌드 포함 가능). 목록을 보려면 epa --style apt list --upgradable 명령을 실행하세요.", "System packages: %d planned @world changes (may include installs and rebuilds). Run epa --style apt list --upgradable to see the plan."), count))
+		return
+	}
+	fmt.Fprintln(os.Stderr, pacmanUpgradeSummary(count))
+}
+
+func pacmanUpgradeSummary(count int) string {
+	if count == 0 {
+		return epa.Text("시스템 패키지: 갱신한 저장소 기준 업그레이드 후보가 없습니다.", "System packages: no upgrade candidates in the refreshed repositories.")
+	}
+	return fmt.Sprintf(epa.Text("시스템 패키지: 업그레이드 후보 %d개. 목록을 보려면 epa --style apt list --upgradable 명령을 실행하세요.", "System packages: %d upgrade candidate(s). Run epa --style apt list --upgradable to see the list."), count)
+}
+
 func performSelfUpdate(automatic, quiet bool) (int, error) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer cancel()
 	if !quiet {
-		fmt.Fprintln(os.Stderr, epa.Text("EPA: 새로운 정식 릴리스를 확인하는 중...", "EPA: checking for a new release..."))
+		fmt.Fprintln(os.Stderr, epa.Text("EPA 자체 업데이트: EPA 프로그램의 새 정식 릴리스를 확인하는 중...", "EPA self-update: checking for a new stable EPA release..."))
 	}
 	result, err := epa.SelfUpdate(ctx, version)
 	if err != nil {
 		return 1, err
 	}
 	if result.Updated {
-		fmt.Fprintf(os.Stderr, epa.Text("EPA: %s -> %s 업데이트 완료. 다음 실행부터 새 버전을 사용합니다.\n", "EPA: %s -> %s; the new version will run next time.\n"), version, result.Version)
+		fmt.Fprintf(os.Stderr, epa.Text("EPA 자체 업데이트: %s -> %s 업데이트 완료. 다음 실행부터 새 버전을 사용합니다.\n", "EPA self-update: %s -> %s; the new version will run next time.\n"), version, result.Version)
 	} else if !automatic || !quiet {
-		fmt.Fprintln(os.Stderr, epa.Text("EPA: 설치된 버전보다 새로운 정식 릴리스가 없습니다.", "EPA: no newer stable release."))
+		fmt.Fprintln(os.Stderr, epa.Text("EPA 자체 업데이트: 설치된 EPA 프로그램보다 새로운 정식 릴리스가 없습니다.", "EPA self-update: no newer stable EPA release."))
 	}
 	return 0, nil
 }
