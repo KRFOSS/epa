@@ -21,6 +21,7 @@ permissions:
 
 jobs:
   build:
+    name: 배포 파일 빌드 및 검증
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.prepare.outputs.version }}
@@ -36,12 +37,14 @@ jobs:
           [[ "$GITHUB_REF" == refs/heads/main ]]
           [[ "$REQUESTED_VERSION" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
           [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]]
-      - uses: actions/checkout@v4
+      - name: 소스 코드 가져오기
+        uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_sha || '' }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-go@v5
+      - name: Go 개발 환경 준비
+        uses: actions/setup-go@v5
         with:
           go-version: stable
           cache: false
@@ -74,13 +77,15 @@ jobs:
           bash tests/build_release.sh "$EPA_VERSION" dist
           bash tests/install_smoke.sh dist "${EPA_VERSION#v}"
           (cd dist && sha256sum -c SHA256SUMS)
-      - uses: actions/upload-artifact@v4
+      - name: 검증된 배포 파일 업로드
+        uses: actions/upload-artifact@v4
         with:
           name: epa-linux-release
           path: dist/
           if-no-files-found: error
 
   publish:
+    name: 정식 릴리스 게시
     if: (github.event_name == 'push' && github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') && github.repository == 'KRFOSS/epa'
     needs: build
     runs-on: ubuntu-latest
@@ -90,7 +95,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - name: 검증된 배포 파일 내려받기
+        uses: actions/download-artifact@v4
         with:
           name: epa-linux-release
           path: dist
