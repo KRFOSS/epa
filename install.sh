@@ -6,6 +6,15 @@ umask 077
 
 fail() { printf 'epa 설치: %s\n' "$*" >&2; exit 1; }
 
+[ "$#" -eq 2 ] || fail '사용법: sh install.sh vX.Y.Z /절대/경로/epa-release.der (신뢰할 수 있는 경로로 받은 공개키)'
+tag=$1
+key=$2
+printf '%s\n' "$tag" | grep -Exq 'v(0|[1-9][0-9]{0,9})\.(0|[1-9][0-9]{0,9})\.(0|[1-9][0-9]{0,9})' || fail '정식 버전 태그(vX.Y.Z)를 지정하세요.'
+# 패턴에 맞는 줄이 있더라도 여러 줄이면 거부합니다.
+case "$tag" in *[!v0-9.]*) fail '정식 버전 태그(vX.Y.Z)를 지정하세요.' ;; esac
+case "$key" in /*) ;; *) fail '공개키 파일은 절대 경로로 지정하세요.' ;; esac
+[ -f "$key" ] && [ -r "$key" ] || fail '신뢰한 EPA 공개키 파일을 읽을 수 없습니다.'
+
 [ "$(uname -s)" = Linux ] || fail 'Linux에서만 설치할 수 있습니다.'
 machine=$(uname -m)
 case "$machine" in
@@ -33,7 +42,7 @@ case "$machine" in
     *) fail "지원하지 않는 아키텍처: $machine" ;;
 esac
 
-for command in curl sha256sum awk mktemp install mv; do
+for command in curl openssl sha256sum awk mktemp install mv od tr wc; do
     command -v "$command" >/dev/null 2>&1 || fail "$command 명령이 필요합니다."
 done
 if [ "$(id -u)" -eq 0 ]; then
@@ -54,17 +63,31 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-base=https://github.com/KRFOSS/epa/releases/latest/download
+base=https://github.com/KRFOSS/epa/releases/download/$tag
 asset=epa-linux-$arch
 fetch() {
     curl -q --proto '=https' --proto-redir '=https' --fail --silent --show-error --location \
-        --retry 3 --connect-timeout 15 --max-time 180 --output "$work/$1" "$base/$1"
+        --retry 3 --connect-timeout 15 --max-time 180 --max-filesize "$2" \
+        --output "$work/$1" "$base/$1" && [ "$(wc -c < "$work/$1")" -le "$2" ]
 }
-fetch SHA256SUMS || fail '공개 릴리스의 체크섬 목록을 내려받지 못했습니다.'
-fetch "$asset" || fail "릴리스에 $asset 파일이 없거나 내려받지 못했습니다."
-expected=$(awk -v name="$asset" '$2 == name && NF == 2 {print $1; count++} END {if (count != 1) exit 1}' "$work/SHA256SUMS") || fail '대상 체크섬을 하나로 특정할 수 없습니다.'
+# 고정 길이의 Ed25519 SubjectPublicKeyInfo 공개키만 받습니다.
+[ "$(wc -c < "$key")" -eq 44 ] && [ "$(od -An -v -tx1 -N12 "$key" | tr -d ' \n')" = 302a300506032b6570032100 ] || fail 'Ed25519 DER 공개키가 필요합니다.'
+fetch SHA256SUMS.sig 64 || fail '릴리스 서명을 내려받지 못했습니다.'
+fetch SHA256SUMS 1048576 || fail '서명된 체크섬 목록을 내려받지 못했습니다.'
+[ "$(wc -c < "$work/SHA256SUMS.sig")" -eq 64 ] &&
+    openssl pkeyutl -verify -pubin -keyform DER -inkey "$key" -rawin -in "$work/SHA256SUMS" -sigfile "$work/SHA256SUMS.sig" >/dev/null ||
+    fail '릴리스 서명 검증에 실패했습니다. 기존 EPA는 변경하지 않았습니다.'
+key_digest=$(sha256sum < "$key")
+key_digest=${key_digest%% *}
+{
+    IFS= read -r header && [ "$header" = "# KRFOSS/epa release $tag" ] &&
+    IFS= read -r source && printf '%s\n' "$source" | grep -Exq '# source [0-9a-f]{40}' &&
+    IFS= read -r signed_key && [ "$signed_key" = "# key $key_digest" ]
+} < "$work/SHA256SUMS" || fail '서명된 배포 목록의 버전·소스·공개키 정보가 일치하지 않습니다.'
+expected=$(awk -v name="$asset" '$2 == name {if (NF != 2) exit 1; print $1; count++} END {if (count != 1) exit 1}' "$work/SHA256SUMS") || fail '대상 체크섬을 하나로 특정할 수 없습니다.'
 case "$expected" in ''|*[!0-9a-f]*) fail '잘못된 체크섬 형식입니다.' ;; esac
 [ "${#expected}" -eq 64 ] || fail '잘못된 체크섬 길이입니다.'
+fetch "$asset" 67108864 || fail "릴리스에 $asset 파일이 없거나 내려받지 못했습니다."
 (cd "$work" && printf '%s  %s\n' "$expected" "$asset" | sha256sum -c - >/dev/null) || fail 'SHA-256 검증에 실패했습니다. 기존 파일은 변경하지 않았습니다.'
 
 mkdir -p -- "$bin_dir" || fail "설치 경로를 만들 수 없습니다: $bin_dir"

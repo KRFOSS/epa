@@ -5,6 +5,7 @@ package epa
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"fmt"
 	"net/http"
@@ -126,10 +127,18 @@ func updateFixture(t *testing.T) (updateTarget, []byte, []byte) {
 }
 
 func TestUpdateFromRelease(t *testing.T) {
+	key, signer, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, otherSigner, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, tt := range []struct {
-		name, tag                                                string
+		name, tag, failure                                       string
 		prerelease, badHash, badELF, missing, changed, cancelled bool
-		wantUpdated, wantError                                   bool
+		wantUpdated, wantError, noBinary                         bool
 	}{
 		{name: "success", tag: "v0.2.0", wantUpdated: true},
 		{name: "same", tag: "v0.1.0"},
@@ -138,7 +147,14 @@ func TestUpdateFromRelease(t *testing.T) {
 		{name: "bad-tag", tag: "v0.2.0/../../x", wantError: true},
 		{name: "checksum-mismatch", tag: "v0.2.0", badHash: true, wantError: true},
 		{name: "not-elf", tag: "v0.2.0", badELF: true, wantError: true},
-		{name: "missing", tag: "v0.2.0", missing: true, wantError: true},
+		{name: "missing-manifest", tag: "v0.2.0", missing: true, wantError: true, noBinary: true},
+		{name: "missing-signature", tag: "v0.2.0", failure: "missing", wantError: true, noBinary: true},
+		{name: "short-signature", tag: "v0.2.0", failure: "short", wantError: true, noBinary: true},
+		{name: "oversized-signature", tag: "v0.2.0", failure: "oversized", wantError: true, noBinary: true},
+		{name: "wrong-key", tag: "v0.2.0", failure: "wrong-key", wantError: true, noBinary: true},
+		{name: "changed-manifest", tag: "v0.2.0", failure: "changed-manifest", wantError: true, noBinary: true},
+		{name: "different-signed-version", tag: "v0.2.0", failure: "different-version", wantError: true, noBinary: true},
+		{name: "unbound-manifest", tag: "v0.2.0", failure: "unbound", wantError: true, noBinary: true},
 		{name: "concurrent-change", tag: "v0.2.0", changed: true, wantError: true},
 		{name: "cancelled", tag: "v0.2.0", cancelled: true, wantError: true},
 	} {
@@ -152,7 +168,27 @@ func TestUpdateFromRelease(t *testing.T) {
 				digest = sha256.Sum256([]byte("wrong"))
 			}
 			const asset = "epa-linux-amd64"
-			var requests atomic.Int32
+			signedTag := tt.tag
+			if tt.failure == "different-version" {
+				signedTag = "v0.1.0"
+			}
+			checksums := fmt.Sprintf("%x  %s\n", digest, asset)
+			manifest := testReleaseManifest(t, key, signedTag, checksums)
+			if tt.failure == "unbound" {
+				manifest = []byte(checksums)
+			}
+			sig := ed25519.Sign(signer, manifest)
+			switch tt.failure {
+			case "wrong-key":
+				sig = ed25519.Sign(otherSigner, manifest)
+			case "changed-manifest":
+				manifest = append(manifest, '\n')
+			case "short":
+				sig = sig[:len(sig)-1]
+			case "oversized":
+				sig = append(sig, 0)
+			}
+			var requests, binaryRequests atomic.Int32
 			concurrent := []byte("another installation")
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				requests.Add(1)
@@ -164,8 +200,15 @@ func TestUpdateFromRelease(t *testing.T) {
 						http.NotFound(w, r)
 						return
 					}
-					fmt.Fprintf(w, "%x  %s\n", digest, asset)
+					_, _ = w.Write(manifest)
+				case "/download/" + tt.tag + "/SHA256SUMS.sig":
+					if tt.failure == "missing" {
+						http.NotFound(w, r)
+						return
+					}
+					_, _ = w.Write(sig)
 				case "/download/" + tt.tag + "/" + asset:
+					binaryRequests.Add(1)
 					if tt.changed {
 						stage := target.path + ".concurrent"
 						if err := os.WriteFile(stage, concurrent, 0755); err != nil {
@@ -187,7 +230,7 @@ func TestUpdateFromRelease(t *testing.T) {
 			if tt.cancelled {
 				cancel()
 			}
-			result, err := updateFrom(ctx, releaseSource{srv.Client(), srv.URL + "/latest", srv.URL + "/download"}, target, "0.1.0", asset)
+			result, err := updateFrom(ctx, releaseSource{srv.Client(), srv.URL + "/latest", srv.URL + "/download"}, target, "0.1.0", asset, key)
 			if (err != nil) != tt.wantError || result.Updated != tt.wantUpdated {
 				t.Fatalf("result=%+v err=%v", result, err)
 			}
@@ -216,6 +259,9 @@ func TestUpdateFromRelease(t *testing.T) {
 			if (tt.name == "same" || tt.name == "older") && requests.Load() != 1 {
 				t.Fatalf("download attempted despite no newer release: %d", requests.Load())
 			}
+			if tt.noBinary && binaryRequests.Load() != 0 {
+				t.Fatal("binary downloaded before validating the signed manifest")
+			}
 			if tt.cancelled && requests.Load() != 0 {
 				t.Fatal("request made after cancellation")
 			}
@@ -234,7 +280,11 @@ func TestLiveReleaseUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := updateFrom(context.Background(), githubReleaseSource(), target, "0.0.0", asset)
+	key, err := parseReleasePublicKey(releasePublicKeyDERBase64)
+	if err != nil {
+		t.Fatal("live signed release test requires linking the official public key: ", err)
+	}
+	result, err := updateFrom(context.Background(), githubReleaseSource(), target, "0.0.0", asset, key)
 	if err != nil || !result.Updated {
 		t.Fatalf("update result=%+v error=%v", result, err)
 	}
