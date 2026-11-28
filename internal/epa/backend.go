@@ -59,6 +59,8 @@ func Detect() (Backend, error) {
 			name, binaries = "apt", []string{"apt-get"}
 		case "rhel", "fedora", "centos", "rocky", "almalinux", "ol", "amzn":
 			name, binaries = "dnf", []string{"dnf", "dnf5"}
+		case "gentoo":
+			name, binaries = "portage", []string{"emerge"}
 		case "alpine":
 			name, binaries = "apk", []string{"apk"}
 		case "arch", "archlinux", "manjaro", "cachyos", "endeavouros":
@@ -74,7 +76,7 @@ func Detect() (Backend, error) {
 		}
 		return Backend{}, LocalizedErrorf("%s 배포판을 감지했으나 지원되는 패키지 관리자를 찾을 수 없습니다.", "%s detected, but its supported package manager is unavailable", id)
 	}
-	return Backend{}, LocalizedErrorf("지원하지 않는 배포판입니다: %q (지원 백엔드: apt, dnf, pacman, apk)", "unsupported distribution %q (supported backends: apt, dnf, pacman, apk)", data["ID"])
+	return Backend{}, LocalizedErrorf("지원하지 않는 배포판입니다: %q (지원 백엔드: apt, dnf, pacman, apk, portage)", "unsupported distribution %q (supported backends: apt, dnf, pacman, apk, portage)", data["ID"])
 }
 
 func (b Backend) helper(name string) (string, error) {
@@ -92,6 +94,16 @@ func (b Backend) Build(o Operation) (Plan, error) {
 	}
 	if o.Action == FullUpgrade && len(o.Packages) > 0 && o.Style != b.Name {
 		return unsupported(Text("특정 패키지 업그레이드와 결합된 업그레이드는 백엔드마다 동작 방식이 다릅니다.", "targeted and combined upgrades have different semantics across backends"))
+	}
+	if o.PortageOptions && b.Name != "portage" {
+		return unsupported(Text("명시적인 Portage 옵션은 Portage 백엔드에서만 지원합니다.", "explicit Portage options require the Portage backend"))
+	}
+	if b.Name != "portage" && o.Action != Search {
+		for _, name := range o.Packages {
+			if !ValidPackage(name) {
+				return unsupported(Text("category/package 형식은 Portage 백엔드에서만 지원합니다.", "category/package targets require the Portage backend"))
+			}
+		}
 	}
 	if o.Interactive && b.Name != "apk" {
 		return unsupported(Text("APK의 명시적 확인 옵션은 APK 백엔드에서만 지원합니다.", "explicit APK interaction is supported only on the APK backend"))
@@ -235,6 +247,8 @@ func (b Backend) Build(o Operation) (Plan, error) {
 		if o.Yes {
 			p.Args = append([]string{"-y"}, p.Args...)
 		}
+	case "portage":
+		return buildPortage(b, o, unsupported)
 	case "apk":
 		var err error
 		p, err = buildAPK(b, o, unsupported)

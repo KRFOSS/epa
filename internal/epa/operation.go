@@ -27,10 +27,10 @@ type Operation struct {
 	Action                                                     Action
 	Packages                                                   []string
 	Yes, RefreshFirst, ForceRefresh, Recursive, NoSave, Needed bool
-	Interactive                                                bool
+	Interactive, PortageOptions                                bool
 }
 
-var Styles = []string{"apt", "dnf", "pacman", "apk"}
+var Styles = []string{"apt", "dnf", "pacman", "apk", "emerge"}
 
 func ValidStyle(s string) bool {
 	for _, v := range Styles {
@@ -73,6 +73,9 @@ func Parse(style string, args []string) (Operation, error) {
 	}
 	if len(args) == 0 {
 		return op, LocalizedErrorf("명령을 지정해야 합니다.", "missing command")
+	}
+	if style == "emerge" {
+		return parseEmerge(args)
 	}
 	if style == "pacman" {
 		switch args[0] {
@@ -200,7 +203,7 @@ func Parse(style string, args []string) (Operation, error) {
 	}
 	if op.Action != Search {
 		for _, p := range op.Packages {
-			if !ValidPackage(p) {
+			if !ValidPackage(p) && !ValidPortageTarget(p) {
 				return op, LocalizedErrorf("지원하지 않는 패키지 대상입니다: %q. 백엔드의 실제 패키지 이름을 사용하십시오.", "unsupported package target %q; use a native package name", p)
 			}
 		}
