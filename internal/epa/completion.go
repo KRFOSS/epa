@@ -41,6 +41,10 @@ func commandsFor(style string) []string {
 		for cmd := range dnfCommands {
 			list = append(list, cmd)
 		}
+	case "apk":
+		for cmd := range apkCommands {
+			list = append(list, cmd)
+		}
 	case "pacman":
 		list = append(list, "-S", "-Ss", "-Si", "-Sy", "-Syy", "-Su", "-Syu", "-Syyu", "-R", "-Rs", "-Rn", "-Rns", "-Q", "-Qu", "-Sc")
 	}
@@ -131,6 +135,22 @@ parsed:
 		return nil
 	}
 	cmd := before[0]
+	if style == "apk" {
+		switch cmd {
+		case "cache":
+			if len(before) == 1 {
+				return matching([]string{"clean"}, prefix)
+			}
+			return nil
+		case "list":
+			if len(before) == 1 {
+				return matching([]string{"--installed", "--upgradable", "-I", "-u"}, prefix)
+			}
+			return nil
+		case "info":
+			return matching(backend.packageNames(false, prefix), prefix)
+		}
+	}
 	// Use the parser's operation table, with a placeholder only for target-required actions.
 	var op Operation
 	var err error
@@ -149,6 +169,19 @@ parsed:
 				opts = append(opts, "-y", "--yes", "--assume-yes")
 			case "dnf":
 				opts = append(opts, "-y", "--assumeyes")
+			case "apk":
+				if op.Action == Install || op.Action == Remove || op.Action == Reinstall || op.Action == FullUpgrade {
+					opts = append(opts, "--no-interactive")
+					if backend.Name == "apk" {
+						opts = append(opts, "-i", "--interactive")
+					}
+				}
+				if op.Action == Refresh && backend.Name == "apk" {
+					opts = append(opts, "--force-refresh")
+				}
+				if op.Action == Reinstall {
+					opts = append(opts, "-r", "--reinstall")
+				}
 			case "pacman":
 				opts = append(opts, "--noconfirm")
 			}
@@ -173,7 +206,7 @@ parsed:
 	case Remove, Reinstall:
 		return matching(backend.packageNames(true, prefix), prefix)
 	case FullUpgrade:
-		if style != "apt" {
+		if style != "apt" && style != "apk" {
 			return matching(backend.packageNames(true, prefix), prefix)
 		}
 	}
@@ -217,6 +250,13 @@ func (b Backend) packageNames(installed bool, prefix string) []string {
 		} else {
 			binary = b.Binary
 			args = []string{"--cacheonly", "repoquery", "--qf=%{name}", "--available"}
+		}
+	case "apk":
+		binary = b.Binary
+		if installed {
+			args = []string{"--no-network", "info"}
+		} else {
+			args = []string{"--no-network", "search", "-q"}
 		}
 	case "pacman":
 		binary = b.Binary

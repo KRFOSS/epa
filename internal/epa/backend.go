@@ -58,6 +58,8 @@ func Detect() (Backend, error) {
 			name, binaries = "apt", []string{"apt-get"}
 		case "rhel", "fedora", "centos", "rocky", "almalinux", "ol", "amzn":
 			name, binaries = "dnf", []string{"dnf", "dnf5"}
+		case "alpine":
+			name, binaries = "apk", []string{"apk"}
 		case "arch", "archlinux", "manjaro", "cachyos", "endeavouros":
 			name, binaries = "pacman", []string{"pacman"}
 		}
@@ -71,7 +73,7 @@ func Detect() (Backend, error) {
 		}
 		return Backend{}, LocalizedErrorf("%s 배포판을 감지했으나 지원되는 패키지 관리자를 찾을 수 없습니다.", "%s detected, but its supported package manager is unavailable", id)
 	}
-	return Backend{}, LocalizedErrorf("지원하지 않는 배포판입니다: %q (지원 백엔드: apt, dnf, pacman)", "unsupported distribution %q (supported backends: apt, dnf, pacman)", data["ID"])
+	return Backend{}, LocalizedErrorf("지원하지 않는 배포판입니다: %q (지원 백엔드: apt, dnf, pacman, apk)", "unsupported distribution %q (supported backends: apt, dnf, pacman, apk)", data["ID"])
 }
 
 func (b Backend) helper(name string) (string, error) {
@@ -89,6 +91,15 @@ func (b Backend) Build(o Operation) (Plan, error) {
 	}
 	if o.Action == FullUpgrade && len(o.Packages) > 0 && o.Style != b.Name {
 		return unsupported(Text("특정 패키지 업그레이드와 결합된 업그레이드는 백엔드마다 동작 방식이 다릅니다.", "targeted and combined upgrades have different semantics across backends"))
+	}
+	if o.Interactive && b.Name != "apk" {
+		return unsupported(Text("APK의 명시적 확인 옵션은 APK 백엔드에서만 지원합니다.", "explicit APK interaction is supported only on the APK backend"))
+	}
+	if o.ForceRefresh && b.Name != "apk" && o.Style == "apk" {
+		return unsupported(Text("APK 강제 갱신과 동일한 동작을 보장할 수 없습니다.", "cannot guarantee equivalent APK forced refresh"))
+	}
+	if o.Action == Clean && o.Style == "apk" && b.Name != "apk" {
+		return unsupported(Text("APK 캐시 정리 방식은 다른 백엔드에서 지원하지 않습니다.", "APK cache cleanup semantics are not supported on other backends"))
 	}
 	if o.NoSave && b.Name != "pacman" {
 		return unsupported(Text("요청한 구성 파일 제거 방식을 지원하지 않습니다.", "the requested configuration removal semantics are unavailable"))
@@ -222,6 +233,12 @@ func (b Backend) Build(o Operation) (Plan, error) {
 		}
 		if o.Yes {
 			p.Args = append([]string{"-y"}, p.Args...)
+		}
+	case "apk":
+		var err error
+		p, err = buildAPK(b, o, unsupported)
+		if err != nil {
+			return Plan{}, err
 		}
 	case "pacman":
 		switch o.Action {
