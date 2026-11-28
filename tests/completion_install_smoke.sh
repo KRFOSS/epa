@@ -6,7 +6,7 @@ work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT
 export HOME="$work/home with spaces"
 export XDG_CONFIG_HOME="$HOME/.config"
-unset ZDOTDIR SUDO_USER
+unset ZDOTDIR SUDO_USER SUDO_COMMAND
 mkdir -m 700 -p "$HOME" "$work/bin"
 ln -s "$binary" "$work/bin/epa"
 export PATH="$work/bin:$PATH"
@@ -64,6 +64,29 @@ if command -v zsh >/dev/null 2>&1; then
     zsh -d -ic '[[ "${_comps[epa]}" == _epa_complete ]]'
 else
     echo 'Zsh unavailable: skipping local Zsh runtime test' >&2
+fi
+
+if command -v fish >/dev/null 2>&1; then
+    epa completion install fish
+    fish_loader="$XDG_CONFIG_HOME/fish/completions/epa.fish"
+    test -f "$fish_loader"
+    cp "$fish_loader" "$work/fish-loader"
+    epa completion install fish
+    cmp "$fish_loader" "$work/fish-loader"
+    epa completion fish | fish -n
+    # Each fresh Fish process autoloads the account-local completion file.
+    fish -c 'complete -C "epa st"' | cut -f1 | grep -Fx style
+    fish -c 'complete -C "epa --style pacman -Sy"' | cut -f1 | grep -Fx -- -Syu
+    fish -c 'complete -C "epa completion install f"' | cut -f1 | grep -Fx fish
+    fish -c 'complete -C "epa install bas"' | cut -f1 | grep -Fx bash
+    printf '%s\n' '# custom fish completion' > "$fish_loader"
+    if epa completion install fish; then
+        echo 'custom Fish completion was unexpectedly overwritten' >&2
+        exit 1
+    fi
+    grep -Fx '# custom fish completion' "$fish_loader"
+else
+    echo 'Fish unavailable: skipping local Fish runtime test' >&2
 fi
 
 # The loader must respect a custom existing completion.

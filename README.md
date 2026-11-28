@@ -36,7 +36,7 @@ epa config get self-update
 ```
 
 - 개발 빌드, 드라이런, 비대화형 패키지 작업, JSON 출력, 실패한 패키지 갱신에서는 자동 업데이트를 수행하지 않습니다. 명시적인 `epa self-update`는 자동 갱신 설정과 별개입니다.
-- root로 직접 실행하면 `/usr/local/bin/epa`의 자체 업데이트도 지원합니다. 해당 경로와 상위 디렉터리는 모두 root 소유이며 다른 계정이 쓸 수 없어야 합니다. sudo를 통한 실행, 권한이 변경된 프로세스, 배포판 패키지 관리 경로(`/usr/bin/epa` 등), 사용자 지정 경로는 자체 교체 대상이 아닙니다. 심볼릭 링크 및 하드 링크로 된 설치 파일도 교체하지 않습니다. 자체 업데이트는 권한 상승을 요청하지 않습니다.
+- root로 직접 실행하면 `/usr/local/bin/epa`의 자체 업데이트도 지원합니다. 해당 경로와 상위 디렉터리는 모두 root 소유이며 다른 계정이 쓸 수 없어야 합니다. `sudo epa`처럼 직접 sudo로 호출한 실행, 권한이 변경된 프로세스, 배포판 패키지 관리 경로(`/usr/bin/epa` 등), 사용자 지정 경로는 자체 교체 대상이 아닙니다. 심볼릭 링크 및 하드 링크로 된 설치 파일도 교체하지 않습니다. 자체 업데이트는 권한 상승을 요청하지 않습니다.
 - GitHub 조회, 다운로드 또는 SHA-256·실행 파일 형식 검증이 실패하면 기존 파일을 보존하고, 성공한 패키지 작업의 종료 상태도 바꾸지 않습니다. 오래된 버전으로 되돌리지 않습니다.
 - 릴리스 체크섬은 전송 손상과 잘못된 파일을 검출하기 위한 것으로 별도의 암호학적 서명이나 GitHub 계정 침해 방지를 대신하지는 않습니다.
 - 자체 업데이트가 없는 v0.1.0 또는 root 자체 업데이트를 지원하지 않는 v0.1.1~v0.1.2에서 처음 전환할 때는 위 설치 명령을 한 번 더 실행해야 합니다.
@@ -69,7 +69,7 @@ epa doctor
 
 기본 명령 스타일은 APT입니다. 명령 스타일과 실제 백엔드는 별개입니다. 선택한 스타일은 계정별로 `$XDG_CONFIG_HOME/epa/config.json`(기본값: `~/.config/epa/config.json`)에 저장됩니다. `epa style reset`으로 APT 스타일을 복원할 수 있습니다. 스크립트에서는 명령 앞에 `--style`을 붙여 명령의 의미를 고정하세요.
 
-일반 사용자로 `epa`를 실행하세요. 시스템을 변경하는 작업에서는 네이티브 패키지 관리자만 `sudo`로 실행합니다. EPA 자체를 `sudo`로 실행해야 한다면 `--style`을 지정하세요. `sudo`로 호출한 EPA에서 스타일을 변경할 수는 없지만, root로 직접 로그인한 경우에는 root 계정의 스타일을 설정할 수 있습니다.
+일반 사용자로 `epa`를 실행하세요. 시스템을 변경하는 작업에서는 네이티브 패키지 관리자만 `sudo`로 실행합니다. EPA 자체를 `sudo`로 실행해야 한다면 `--style`을 지정하세요. `sudo`로 호출한 EPA에서 스타일을 변경할 수는 없지만, root로 직접 로그인하거나 `sudo -i`, `sudo su` 등으로 root 셸에 진입한 경우에는 root 계정의 설정을 사용할 수 있습니다. sudo 환경 변수가 남아 있는 root 셸에서는 원래 사용자의 HOME·XDG 설정을 따르지 않고 root 계정의 홈과 기본 설정 경로를 사용합니다.
 
 ## 통합 터미널 출력
 
@@ -114,17 +114,18 @@ epa config get progress
 
 ## 셸 자동완성
 
-공개 설치기는 설치 후 현재 계정에서 사용 가능한 Bash 및 Zsh의 자동완성을 영구 등록합니다. 새 대화형 셸이나 SSH 재접속부터 적용됩니다. 기존 설정을 덮어쓰지 않고 EPA 전용 블록만 추가하며, 다시 설치해도 같은 블록을 중복 추가하지 않습니다.
+공개 설치기는 설치 후 현재 계정에서 사용 가능한 Bash, Zsh 및 Fish의 자동완성을 영구 등록합니다. 새 대화형 셸이나 SSH 재접속부터 적용됩니다. 기존 설정을 덮어쓰지 않고 EPA 전용 블록 또는 Fish 자동완성 파일만 등록하며, 다시 설치해도 중복되지 않습니다.
 
 이미 EPA를 설치했거나 자체 업데이트한 사용자는 다음 명령으로 한 번 등록할 수 있습니다.
 
 ```sh
-epa completion install       # 설치된 Bash 및 Zsh
+epa completion install       # 설치된 Bash, Zsh, Fish
 epa completion install bash  # Bash만 등록
 epa completion install zsh   # Zsh만 등록
+epa completion install fish  # Fish만 등록
 ```
 
-Bash는 `~/.bashrc`와 실제 로그인 시작 파일(`~/.bash_profile`, `~/.bash_login`, `~/.profile` 중 우선순위가 가장 높은 파일)을 사용합니다. Zsh는 `~/.zshrc` 또는 환경 변수로 내보낸 `ZDOTDIR`의 `.zshrc`를 사용합니다. 로더는 `~/.local/share/epa/completion/`에 설치됩니다. 기존에 등록된 자동완성은 그대로 유지합니다. Zsh에서 초기화가 필요하면 `compinit -i`로 안전하지 않은 자동완성 경로를 제외합니다. 또한 공유 쓰기 권한이 있거나 심볼릭 링크·하드 링크인 설정 파일은 안전을 위해 자동 수정하지 않습니다. 자동완성 등록에 실패해도 검증된 EPA 바이너리 설치는 유지됩니다.
+Bash는 `~/.bashrc`와 실제 로그인 시작 파일(`~/.bash_profile`, `~/.bash_login`, `~/.profile` 중 우선순위가 가장 높은 파일)을 사용합니다. Zsh는 `~/.zshrc` 또는 환경 변수로 내보낸 `ZDOTDIR`의 `.zshrc`를 사용합니다. Bash·Zsh 로더는 `~/.local/share/epa/completion/`에 설치됩니다. Fish는 `$XDG_CONFIG_HOME/fish/completions/epa.fish`(기본값: `~/.config/fish/completions/epa.fish`)를 자동으로 읽습니다. 기존에 등록된 자동완성은 그대로 유지합니다. Zsh에서 초기화가 필요하면 `compinit -i`로 안전하지 않은 자동완성 경로를 제외합니다. 또한 공유 쓰기 권한이 있거나 심볼릭 링크·하드 링크인 설정 파일은 안전을 위해 자동 수정하지 않습니다. 자동완성 등록에 실패해도 검증된 EPA 바이너리 설치는 유지됩니다.
 
 `sudo`로 설치할 때는 다른 계정의 시작 파일을 변경하지 않습니다. EPA를 사용할 계정에서 `epa completion install`을 실행하세요. 자동 등록을 원하지 않으면 설치 명령의 `sh`에 `EPA_INSTALL_COMPLETION=0`을 지정할 수 있습니다.
 
@@ -132,7 +133,7 @@ Bash는 `~/.bashrc`와 실제 로그인 시작 파일(`~/.bash_profile`, `~/.bas
 curl -fsSL https://github.com/KRFOSS/epa/releases/latest/download/install.sh | EPA_INSTALL_COMPLETION=0 sh
 ```
 
-영구 등록을 제거하려면 해당 시작 파일의 `# >>> EPA shell completion >>>`부터 `# <<< EPA shell completion <<<`까지의 블록만 삭제하세요. 기존 설정 파일 전체를 삭제하지 마세요.
+Bash·Zsh 영구 등록을 제거하려면 해당 시작 파일의 `# >>> EPA shell completion >>>`부터 `# <<< EPA shell completion <<<`까지의 블록만 삭제하세요. Fish에서는 EPA가 설치한 `fish/completions/epa.fish`만 삭제하세요. 기존 설정 파일 전체를 삭제하지 마세요.
 
 현재 셸에서 즉시 사용하려면 Bash에서 다음 명령을 실행하세요.
 
@@ -146,6 +147,12 @@ Zsh에서는 `compinit`으로 자동완성을 초기화한 뒤 불러오세요.
 autoload -Uz compinit
 compinit
 source <(epa completion zsh)
+```
+
+Fish에서는 다음 명령으로 현재 셸에 바로 등록할 수 있습니다.
+
+```fish
+epa completion fish | source
 ```
 
 자동완성은 활성 스타일의 명령과 옵션, 실제 백엔드의 패키지 이름을 제안합니다. 설치·검색·정보 조회에는 사용 가능한 패키지를, 제거·재설치에는 설치된 패키지를 제안합니다. 패키지 후보는 기존 로컬 메타데이터로만 조회하며 제한 시간은 2초입니다. 관리자 권한을 요청하지 않으며, 캐시가 없거나 읽을 수 없으면 패키지 후보를 표시하지 않습니다.
@@ -165,8 +172,8 @@ EPA는 네이티브 명령 전체를 대체하지 않습니다. 알 수 없는 �
 ## 안전 수칙과 배포판별 동작 차이
 
 - APT 스타일의 `update`는 메타데이터를 갱신하고, DNF 스타일의 `update`는 패키지를 업그레이드합니다.
-- Pacman에서 메타데이터만 새로고침하면 부분 업그레이드가 발생할 수 있어 EPA는 이를 거부합니다. 또한 패키지 제거가 없음을 보장할 수 없어 Pacman 백엔드에서 APT 스타일의 `upgrade`를 거부합니다. 시스템 전체를 갱신하려면 `epa --style pacman -Syu` 또는 APT 스타일의 `epa full-upgrade`를 사용하세요. 개별 패키지를 설치하기 전에는 Arch 시스템을 최신 상태로 유지하세요.
-- APT 백엔드에서 Pacman 스타일의 `-Syu`는 `apt-get update`가 성공한 뒤 제거를 허용하지 않는 APT 업그레이드를 실행합니다. `dist-upgrade`가 아니며, APT의 `-Syy` 및 `-Syyu`는 HTTP(S)의 No-Cache 옵션으로 저장소를 다시 확인합니다. 변경되지 않은 로컬 인덱스까지 무조건 재다운로드하는 pacman의 강제 갱신과는 다릅니다. DNF에서는 `--refresh`를 사용합니다. Arch의 저장소 단독 갱신은 부분 업그레이드를 방지하기 위해 계속 제한합니다.
+- Pacman 백엔드의 `epa update`와 `-Sy`·`-Syy`는 root 소유의 별도 조회용 DB(`/var/cache/epa/pacman`)를 갱신하며 실제 설치용 DB를 변경하지 않습니다. 성공한 조회 갱신 결과는 검색·정보·업데이트 후보 및 자동완성에 사용합니다. 캐시가 없거나 갱신이 실패하면 네이티브 DB를 사용합니다. 설치·제거 등은 항상 시스템 DB를 사용합니다. `upgrade`, `full-upgrade` 및 `-Su`·`-Syu`는 네이티브 `pacman -Syu`로 시스템 전체를 갱신합니다. 이 과정에서 Pacman의 패키지 교체·제거 정책이 적용될 수 있습니다. 개별 패키지를 설치하기 전에는 Arch 시스템을 최신 상태로 유지하세요.
+- APT 백엔드에서 Pacman 스타일의 `-Syu`는 `apt-get update`가 성공한 뒤 제거를 허용하지 않는 APT 업그레이드를 실행합니다. `dist-upgrade`가 아니며, APT의 `-Syy` 및 `-Syyu`는 HTTP(S)의 No-Cache 옵션으로 저장소를 다시 확인합니다. 변경되지 않은 로컬 인덱스까지 무조건 재다운로드하는 pacman의 강제 갱신과는 다릅니다. DNF에서는 `--refresh`를 사용합니다. Pacman 백엔드에서는 별도의 조회용 DB만 강제 갱신합니다.
 - DNF 백엔드의 APT 스타일 `upgrade`는 `obsoletes`를 끄지만, 설치 전용 패키지 개수 제한 등 DNF의 트랜잭션 규칙은 적용됩니다. APT 스타일로 제거할 때 DNF의 자동 고아 패키지 제거는 끄지만, DNF 정책에 따라 대상에 의존하는 패키지가 함께 제거될 수 있습니다. EPA는 이 차이 때문에 DNF에서 Pacman 스타일 제거를 거부합니다.
 - 스타일과 백엔드가 다를 때 의미가 달라지는 대상 지정 업그레이드나 캐시 정리 명령은 거부합니다. 배포판마다 의존성 및 패키지 교체 정책이 다르므로 같은 명령이 동일한 변경을 보장하지는 않습니다.
 - 패키지 이름 매핑, 서명 검증 우회, 임의 플래그 전달 및 셸 평가를 지원하지 않습니다.

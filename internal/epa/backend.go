@@ -9,12 +9,13 @@ import (
 
 type Backend struct{ Name, Binary string }
 type Plan struct {
-	Binary        string
-	Args          []string
-	Privileged    bool
-	RefreshBefore bool
-	RefreshArgs   []string
-	Note          string
+	Binary          string
+	Args            []string
+	Privileged      bool
+	RefreshBefore   bool
+	IsolatedRefresh bool
+	RefreshArgs     []string
+	Note            string
 }
 
 func systemBinary(name string) string {
@@ -225,23 +226,27 @@ func (b Backend) Build(o Operation) (Plan, error) {
 	case "pacman":
 		switch o.Action {
 		case Refresh:
-			return unsupported(Text("저장소 정보만 갱신하면 부분 업그레이드가 발생할 수 있습니다. epa --style pacman -Syu를 사용하십시오.", "standalone refresh can lead to a partial upgrade; use epa --style pacman -Syu"))
-		case Upgrade:
-			return unsupported(Text("pacman에서 APT upgrade와 동일한 패키지 제거 금지 동작을 보장할 수 없습니다. full-upgrade 또는 epa --style pacman -Syu를 사용하십시오.", "APT upgrade cannot guarantee no removals; use full-upgrade or epa --style pacman -Syu"))
-		case FullUpgrade:
-			if o.Style == "pacman" && !o.RefreshFirst {
-				p.Args = []string{"-Su"}
-			} else if o.ForceRefresh {
-				p.Args = []string{"-Syyu"}
-			} else {
-				p.Args = []string{"-Syu"}
-				if o.Style != "pacman" {
-					p.Note = Text("Arch의 전체 업그레이드는 저장소 정보를 갱신하고 시스템 전체를 업그레이드합니다.", "A full Arch upgrade refreshes repositories and upgrades the entire system.")
-				}
+			p.IsolatedRefresh = true
+			p.Args = []string{"--dbpath", PacmanSnapshotPath, "--logfile", "/dev/null", "-Sy"}
+			if o.ForceRefresh {
+				p.Args[len(p.Args)-1] = "-Syy"
+			}
+			p.Note = Text("설치용 DB는 변경하지 않고 조회용 저장소 정보만 갱신합니다.", "Refreshing query-only repository metadata without changing the transaction database.")
+		case Upgrade, FullUpgrade:
+			// The isolated refresh never updates the transaction DB.
+			// Always refresh the native DB together with a system upgrade.
+			p.Args = []string{"-Syu"}
+			if o.ForceRefresh {
+				p.Args[0] = "-Syyu"
+			}
+			if o.Action == Upgrade {
+				p.Note = Text("Arch에서는 전체 시스템 업그레이드를 수행합니다. 패키지 교체 및 제거가 필요할 수 있습니다.", "Arch performs a full system upgrade, which may require replacing or removing packages.")
+			} else if o.Style != "pacman" || !o.RefreshFirst {
+				p.Note = Text("저장소 정보를 갱신하고 시스템 전체를 업그레이드합니다.", "Refreshing repository metadata and upgrading the entire system.")
 			}
 		case Install:
 			p.Args = []string{"-S"}
-			p.Note = Text("Arch 시스템을 최신 상태로 유지하십시오. EPA는 설치 전에 저장소 정보만 단독으로 갱신하지 않습니다.", "Use a fully upgraded Arch system; EPA never refreshes metadata alone before installing.")
+			p.Note = Text("Arch 시스템을 최신 상태로 유지하십시오. 설치는 조회용 캐시가 아닌 시스템 패키지 DB를 사용합니다.", "Use a fully upgraded Arch system; installation uses the system database, not the query cache.")
 		case Remove:
 			if o.Style != "pacman" {
 				p.Note = Text("Pacman은 의존성이 깨지는 패키지 제거를 거부합니다.", "Pacman refuses removals that would break dependencies.")

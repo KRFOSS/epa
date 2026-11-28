@@ -36,8 +36,11 @@ func TestPlan(t *testing.T) {
 		{"apt", "dnf", []string{"update"}, []string{"--refresh", "makecache"}, false, false},
 		{"dnf", "apt", []string{"update"}, []string{"upgrade", "--with-new-pkgs", "--no-remove"}, false, false},
 		{"pacman", "apt", []string{"-Syu"}, []string{"upgrade", "--with-new-pkgs", "--no-remove"}, false, true},
-		{"apt", "pacman", []string{"update"}, nil, true, false},
-		{"apt", "pacman", []string{"upgrade"}, nil, true, false},
+		{"apt", "pacman", []string{"update"}, []string{"--dbpath", PacmanSnapshotPath, "--logfile", "/dev/null", "-Sy"}, false, false},
+		{"pacman", "pacman", []string{"-Syy"}, []string{"--dbpath", PacmanSnapshotPath, "--logfile", "/dev/null", "-Syy"}, false, false},
+		{"dnf", "pacman", []string{"makecache"}, []string{"--dbpath", PacmanSnapshotPath, "--logfile", "/dev/null", "-Sy"}, false, false},
+		{"apt", "pacman", []string{"upgrade"}, []string{"-Syu"}, false, false},
+		{"pacman", "pacman", []string{"-Su"}, []string{"-Syu"}, false, false},
 		{"apt", "pacman", []string{"full-upgrade"}, []string{"-Syu"}, false, false},
 		{"apt", "pacman", []string{"remove", "nginx"}, []string{"-R", "--", "nginx"}, false, false},
 		{"pacman", "dnf", []string{"-R", "nginx"}, nil, true, false},
@@ -65,6 +68,9 @@ func TestPlan(t *testing.T) {
 		}
 		if err != nil || !reflect.DeepEqual(plan.Args, tt.want) || plan.RefreshBefore != tt.refresh {
 			t.Errorf("%s %v on %s: %+v, %v; want %v", tt.style, tt.args, tt.backend, plan, err, tt.want)
+		}
+		if plan.IsolatedRefresh != (tt.backend == "pacman" && op.Action == Refresh) {
+			t.Errorf("incorrect isolation: %s %v", tt.style, tt.args)
 		}
 		if tt.refresh && !reflect.DeepEqual(plan.RefreshArgs, aptRefreshArgs(op.ForceRefresh)) {
 			t.Errorf("%s %v: invalid preliminary refresh args: %v", tt.style, tt.args, plan.RefreshArgs)

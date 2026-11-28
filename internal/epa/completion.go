@@ -15,12 +15,17 @@ var bashCompletion string
 //go:embed completion.zsh
 var zshCompletion string
 
+//go:embed completion.fish
+var fishCompletion string
+
 func CompletionScript(shell string) (string, bool) {
 	switch shell {
 	case "bash":
 		return bashCompletion, true
 	case "zsh":
 		return zshCompletion, true
+	case "fish":
+		return fishCompletion, true
 	}
 	return "", false
 }
@@ -118,10 +123,10 @@ parsed:
 	}
 	if before[0] == "completion" {
 		if len(before) == 1 {
-			return matching([]string{"bash", "zsh", "install"}, prefix)
+			return matching([]string{"bash", "zsh", "fish", "install"}, prefix)
 		}
 		if len(before) == 2 && before[1] == "install" {
-			return matching([]string{"all", "bash", "zsh"}, prefix)
+			return matching([]string{"all", "bash", "zsh", "fish"}, prefix)
 		}
 		return nil
 	}
@@ -164,12 +169,12 @@ parsed:
 	}
 	switch op.Action {
 	case Install, Search, Info:
-		return matching(backend.packageNames(false), prefix)
+		return matching(backend.packageNames(false, prefix), prefix)
 	case Remove, Reinstall:
-		return matching(backend.packageNames(true), prefix)
+		return matching(backend.packageNames(true, prefix), prefix)
 	case FullUpgrade:
 		if style != "apt" {
-			return matching(backend.packageNames(true), prefix)
+			return matching(backend.packageNames(true, prefix), prefix)
 		}
 	}
 	return nil
@@ -188,7 +193,7 @@ func matching(values []string, prefix string) []string {
 	return result
 }
 
-func (b Backend) packageNames(installed bool) []string {
+func (b Backend) packageNames(installed bool, prefix string) []string {
 	var binary string
 	var args []string
 	switch b.Name {
@@ -199,6 +204,9 @@ func (b Backend) packageNames(installed bool) []string {
 		} else {
 			binary = systemBinary("apt-cache")
 			args = []string{"pkgnames"}
+			if prefix != "" && !strings.HasPrefix(prefix, "-") {
+				args = append(args, prefix)
+			}
 		}
 	case "dnf":
 		if installed {
@@ -215,7 +223,7 @@ func (b Backend) packageNames(installed bool) []string {
 		if installed {
 			args = []string{"-Qq"}
 		} else {
-			args = []string{"-Slq"}
+			args = PacmanQueryArgs([]string{"-Slq"})
 		}
 	default:
 		return nil

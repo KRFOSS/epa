@@ -165,7 +165,7 @@ func checkedInstallTarget(expected string, running os.FileInfo, uid uint32, dirs
 }
 
 func currentUpdateTarget() (updateTarget, error) {
-	if os.Getuid() != os.Geteuid() || os.Getenv("SUDO_USER") != "" {
+	if os.Getuid() != os.Geteuid() || DirectSudo() {
 		return updateTarget{}, LocalizedErrorf("sudo 또는 권한이 변경된 실행에서는 자체 업데이트를 지원하지 않습니다. 해당 계정에서 직접 실행하거나 기존 설치 방식으로 갱신하십시오.", "self-update is unavailable under sudo or changed privileges; run directly as the installation account or use the installer")
 	}
 	exe, err := os.Executable()

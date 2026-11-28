@@ -33,7 +33,7 @@ SH
 chmod +x "$work/shims/"*
 export PATH="$work/shims:$PATH" HOME="$work/home"
 export TEST_MACHINE EXPECT_ARCH TEST_ELF
-unset EPA_BIN_DIR ZDOTDIR SUDO_USER
+unset EPA_BIN_DIR ZDOTDIR SUDO_USER SUDO_COMMAND
 # Cross-architecture cases validate bytes; foreign binaries cannot run here.
 export EPA_INSTALL_COMPLETION=0
 export XDG_CONFIG_HOME="$HOME/.config"
@@ -49,12 +49,16 @@ sh "$ASSETS/install.sh"
 [[ $("$EPA_BIN_DIR/epa" --version) == "epa $version" ]]
 test ! -e "$HOME/.bashrc"
 test ! -e "$HOME/.zshrc"
+test ! -e "$XDG_CONFIG_HOME/fish/completions/epa.fish"
 unset EPA_INSTALL_COMPLETION
 sh "$ASSETS/install.sh"
 grep -Fx '# >>> EPA shell completion >>>' "$HOME/.bashrc"
 grep -Fx '# >>> EPA shell completion >>>' "$HOME/.profile"
 if command -v zsh >/dev/null 2>&1; then
     grep -Fx '# >>> EPA shell completion >>>' "$HOME/.zshrc"
+fi
+if command -v fish >/dev/null 2>&1; then
+    grep -F "command epa completion fish | source" "$XDG_CONFIG_HOME/fish/completions/epa.fish"
 fi
 cp "$HOME/.bashrc" "$work/bashrc.before"
 sh "$ASSETS/install.sh"
