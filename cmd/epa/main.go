@@ -390,6 +390,15 @@ parsed:
 	if err != nil {
 		return 1, err
 	}
+	if op.HasInstallPatterns() {
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+		op, err = b.ExpandInstallPatterns(ctx, op)
+		cancel()
+		if err != nil {
+			return 2, err
+		}
+		fmt.Fprintln(os.Stderr, epa.Text("epa: 설치 패턴 일치 대상:", "epa: installation pattern matches:"), strings.Join(op.Packages, " "))
+	}
 	plan, err := b.Build(op)
 	if err != nil {
 		return 2, err
