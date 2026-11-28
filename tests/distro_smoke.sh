@@ -46,7 +46,7 @@ case "$backend" in
     else
         grep -F "시스템 패키지: 업그레이드 후보 ${count}개." "$XDG_CONFIG_HOME/refresh.log"
     fi
-    cmp "$XDG_CONFIG_HOME/native.before" "$XDG_CONFIG_HOME/native.after"
+    test "$(sha256sum < "$XDG_CONFIG_HOME/native.before")" = "$(sha256sum < "$XDG_CONFIG_HOME/native.after")"
     "$bin" --style pacman --progress native -Syy
     ;;
  pacman)
